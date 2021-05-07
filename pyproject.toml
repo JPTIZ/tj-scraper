@@ -8,6 +8,7 @@ authors = ["João Paulo Taylor Ienczak Zanette <jpaulotiz@gmail.com>"]
 python = "^3.9"
 Scrapy = "^2.4.1"
 importlib-metadata = "^4.0.1"
+jsonlines = "^2.0.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"

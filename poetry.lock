@@ -203,6 +203,14 @@ optional = false
 python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*"
 
 [[package]]
+name = "jsonlines"
+version = "2.0.0"
+description = "Library with helpers for the jsonlines file format"
+category = "main"
+optional = false
+python-versions = ">=3.6"
+
+[[package]]
 name = "lazy-object-proxy"
 version = "1.5.2"
 description = "A fast and thorough lazy object proxy."
@@ -584,7 +592,7 @@ testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.9"
-content-hash = "6dceabfdd814b80b8a31c04f056bac3d2034cf997365333f31724130095faabb"
+content-hash = "85fd4d188070dfb2c9c0d31d75b2270eb4d90ffd6797983f407fa861b8d40dcf"
 
 [metadata.files]
 astroid = [
@@ -703,6 +711,10 @@ itemloaders = [
 jmespath = [
     {file = "jmespath-0.10.0-py2.py3-none-any.whl", hash = "sha256:cdf6525904cc597730141d61b36f2e4b8ecc257c420fa2f4549bac2c2d0cb72f"},
     {file = "jmespath-0.10.0.tar.gz", hash = "sha256:b85d0567b8666149a93172712e68920734333c0ce7e89b78b3e987f71e5ed4f9"},
+]
+jsonlines = [
+    {file = "jsonlines-2.0.0-py3-none-any.whl", hash = "sha256:bfb043d4e25fd894dca67b1f2adf014e493cb65d0f18b3a74a98bfcd97c3d983"},
+    {file = "jsonlines-2.0.0.tar.gz", hash = "sha256:6fdd03104c9a421a1ba587a121aaac743bf02d8f87fa9cdaa3b852249a241fe8"},
 ]
 lazy-object-proxy = [
     {file = "lazy-object-proxy-1.5.2.tar.gz", hash = "sha256:5944a9b95e97de1980c65f03b79b356f30a43de48682b8bdd90aa5089f0ec1f4"},
