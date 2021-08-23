@@ -1,0 +1,21 @@
+name: Full check
+
+on: [push]
+
+jobs:
+  full-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Install dependencies
+        run: poetry install
+      - name: Mypy
+        run: poetry run mypy --ignore-missing-imports
+      - name: Black
+        run: poetry run black --check --diff
+      - name: Pylint
+        run: poetry run pylint
+      - name: Tests
+        run: poetry run pytest
