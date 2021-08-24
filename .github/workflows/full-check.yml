@@ -18,10 +18,10 @@ jobs:
       - name: Install dependencies
         run: poetry install
       - name: Mypy
-        run: poetry run mypy --ignore-missing-imports
+        run: poetry run mypy --ignore-missing-imports .
       - name: Black
-        run: poetry run black --check --diff
+        run: poetry run black --check --diff .
       - name: Pylint
-        run: poetry run pylint
+        run: poetry run pylint .
       - name: Tests
         run: poetry run pytest
