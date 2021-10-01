@@ -1,21 +1,15 @@
 """Tests main module functions in local files"""
-from dataclasses import dataclass
 from pathlib import Path
 
 import jsonlines
 import pytest
-from scrapy.crawler import CrawlerProcess
 
-from tj_scraper import TJRJSpider
-
-
-@dataclass
-class Process:
-    """The information we want from a single process from a TJ."""
-
-    process_id: int
-    uf: str  # pylint: disable=invalid-name
-    subject: str
+from tj_scraper import (
+    run_spider,
+    TJRJSpider,
+    BlockedByCaptcha,
+    BadProcessId,
+)
 
 
 class LocalTJRJSpider(TJRJSpider):
@@ -24,19 +18,9 @@ class LocalTJRJSpider(TJRJSpider):
     website.
     """
 
-    start_urls = [
-        f"file://{Path.cwd() / 'samples' / 'processo-1.html'}",
-    ]
-
-    def parse(self, response, **kwargs):
-        subject_xpath = "//form/table/tbody/tr[20]/td[2]/text()"
-        subject = response.xpath(subject_xpath).get().strip()
-
-        yield Process(0, "RJ", subject.replace("\n", ""))
-
 
 # pylint: disable=redefined-outer-name
-@pytest.fixture
+@pytest.fixture(scope="module")
 def crawler_settings():
     """Generates most basic settings for crawler."""
     return {
@@ -57,28 +41,56 @@ def items_sink(crawler_settings):
     sink.unlink(missing_ok=True)
 
 
-@pytest.fixture
-def crawler_process(crawler_settings):
-    """
-    Generates a simple CrawlerProcess instance.
-    """
-    return CrawlerProcess(settings=crawler_settings)
-
-
 # pylint: disable=redefined-outer-name
-def test_fetch_subject_from_a_process_page(items_sink, crawler_process):
+def test_fetch_subject_from_a_process_page(items_sink, crawler_settings):
     """
     Tests if crawling a single process subject page fetches its subject
     correctly.
     """
-    crawler_process.crawl(LocalTJRJSpider)
-    crawler_process.start()
+    start_urls = [
+        f"file://{Path.cwd() / 'samples' / 'processo-1.html'}",
+    ]
+
+    run_spider(LocalTJRJSpider, start_urls=start_urls, settings=crawler_settings)
 
     with jsonlines.open(items_sink) as sink_file:
         data = [*sink_file]
 
+    assert data
     assert data[0]["subject"] == (
         "Crimes de Tortura (Art. 1º - Lei 9.455/97)"
         " E Prevaricação (Art. 319 e 319-A - CP)"
         " E Usurpação de função pública  (Art. 328 - CP)"
     )
+
+
+def test_fail_on_invalid_process_page(crawler_settings):
+    """
+    Tests if an unexistent proccess ID page is correctly detected.
+    """
+    start_urls = [
+        f"file://{Path.cwd() / 'samples' / 'invalid-numProcesso.html'}",
+    ]
+
+    with pytest.raises(BadProcessId):
+        run_spider(
+            LocalTJRJSpider,
+            start_urls=start_urls,
+            settings=crawler_settings,
+        )
+
+
+def test_detect_captcha_page(crawler_settings):
+    """
+    Tests if an unexistent proccess ID page is correctly detected.
+    """
+    start_urls = [
+        f"file://{Path.cwd() / 'samples' / 'processo-1.html'}",
+    ]
+
+    with pytest.raises(BlockedByCaptcha):
+        run_spider(
+            LocalTJRJSpider,
+            start_urls=start_urls,
+            settings=crawler_settings,
+        )

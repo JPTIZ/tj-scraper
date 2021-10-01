@@ -1,69 +1,178 @@
-'''A package of tools for brazilian Tribunal de Justiça pages.'''
+"""A package of tools for brazilian Tribunal de Justiça pages."""
+import multiprocessing as mp
 from dataclasses import dataclass
+from collections.abc import Collection
+
 from importlib_metadata import version
 
-from scrapy.crawler import CrawlerProcess, Spider
+from scrapy.crawler import CrawlerProcess, CrawlerRunner, Spider
+from scrapy.http import Response
+from twisted.internet import reactor
 
 
 __version__ = version(__package__)
 
 
 __all__ = [
-    '__version__',
-    'TJRJSpider',
-    'Spider',
+    "__version__",
+    "TJRJSpider",
+    "Spider",
 ]
 
 
-def build_url(page, params):
-    '''Builds URL with correct query string. For API purposes.'''
-    query_string = '&'.join(f'{p}={v}' for p, v in params.items())
+class BadProcessId(Exception):
+    """Thrown when an invalid Process ID/Number is used in a request."""
 
-    return f'{page}?{query_string}'
+
+class BlockedByCaptcha(Exception):
+    """
+    Thrown when trying to access a page that contains a captcha (thus stopping
+    this crawler of going forward).
+    """
+
+
+def build_url(page, params):
+    """Builds URL with correct query string. For API purposes."""
+    query_string = "&".join(f"{p}={v}" for p, v in params.items())
+
+    return f"{page}?{query_string}"
 
 
 @dataclass
 class Process:
-    '''The information we want from a single process from a TJ.'''
+    """The information we want from a single process from a TJ."""
+
     process_id: int
-    uf: str           # pylint: disable=invalid-name
+    uf: str  # pylint: disable=invalid-name
     subject: str
 
 
+def check_for_captcha(process_id: int, response: Response):
+    """
+    Raises a `BlockedByCaptcha` if response page has a captcha on it.
+    """
+    return process_id, response
+
+
+def check_for_valid_id(process_id: int, response: Response):
+    """
+    Raises an `BadProcessId` if response page is an error page stating the
+    process_id is invalid
+    """
+    error_xpath = "//content/content100/h3/text()"
+    try:
+        h3_content = response.xpath(error_xpath).get().strip()
+    except AttributeError:
+        return
+    if h3_content.lower() == "erro":
+        raise BadProcessId(process_id)
+
+
+def extract_process_id(response: Response):
+    """
+    Extracts process ID from response HTML.
+    """
+
+    def try_or_false(function):
+        try:
+            return function()
+        except AttributeError:
+            return False
+
+    def assume_good_page():
+        xpath = "//form/table/tbody/tr[3]/td[1]/h2/text()"
+        return response.xpath(xpath)[1].get().strip()
+
+    if _id := try_or_false(assume_good_page):
+        return _id
+
+    return ""
+
+
+def extract_page_content(response: Response):
+    """
+    Extracts page content. Raises exceptions if not a valid process page.
+    """
+    process_id = extract_process_id(response)
+
+    check_for_captcha(process_id, response)
+    check_for_valid_id(process_id, response)
+
+    subject_xpath = "//form/table/tbody/tr[20]/td[2]/text()"
+    try:
+        content = response.xpath(subject_xpath).get().strip()
+        return process_id, content
+    except AttributeError:
+        with open("results/failed.html", "wb") as failed_file:
+            failed_file.write(response.body)
+        raise
+
+
+def build_tjrj_process_url(process_id):
+    """Creates process info page url from process_id."""
+    root = "http://www4.tjrj.jus.br"
+    page = "consultaProcessoWebV2/consultaMov.do"
+
+    params = {
+        "numProcesso": process_id,
+        "acessoIP": "internet",
+    }
+    return build_url(f"{root}/{page}", params=params)
+
+
 class TJRJSpider(Spider):
-    '''Extracts quotes from TJ-RJ page.'''
+    """Extracts quotes from TJ-RJ page."""
 
-    @staticmethod
-    def _build_process_url(process_id):
-        '''Creates process info page url from process_id.'''
-        root = "http://www4.tjrj.jus.br"
-        page = "consultaProcessoWebV2/consultaMov.do"
-
-        params = {
-            'numProcesso': process_id,
-        }
-        return build_url(f'{root}/{page}', params=params)
-
-    build_process_url = _build_process_url.__func__
+    build_process_url = build_tjrj_process_url
 
     name = "tjrj-spider"
-    start_urls = [
-        build_process_url("2007.001.209836-2")
-    ]
+    start_urls = [build_process_url("2007.001.209836-2")]
 
-    def parse(self, response, **kwargs):
-        subject_xpath = '//form/table/tbody/tr[20]/td[2]/text()'
-        subject = response.xpath(subject_xpath).get().strip()
+    def parse(self, response: Response, **kwargs):
+        process_id, page_content = extract_page_content(response)
 
-        yield Process(0, 'RJ', subject)
+        yield Process(process_id, "RJ", page_content.replace("\n", ""))
 
 
-if __name__ == '__main__':
-    process = CrawlerProcess(settings={
-        'FEEDS': {
-            'items.json': {'format': 'json'}
-        }
-    })
+# the wrapper to make it run more times
+def run_spider(spider, **kwargs):
+    """
+    Runs a spider in a separated subprocess, enabling to run multiple spiders
+    in a single run.
+    """
+
+    def _run_spider(queue):
+        runner = CrawlerRunner(kwargs.get("settings", {}))
+        deferred = runner.crawl(spider, **kwargs)
+        reactor.stop = reactor.stop or (lambda x: x)
+        reactor.run = reactor.run or (lambda x: x)
+        deferred.addBoth(lambda _: reactor.stop())
+        reactor.run()
+        queue.put(None)
+
+    queue = mp.Queue()
+    process = mp.Process(target=_run_spider, args=(queue,))
+    process.start()
+    result = queue.get()
+    process.join()
+
+    if result is not None:
+        raise result
+
+
+def processes_by_subject(words: Collection[str]) -> Collection[Process]:
+    """Search for processes that contain the given words on its subject."""
+    print(words)
+    return []
+
+
+def main():
+    """Program's start point. May be used to simulate program execution."""
+    process = CrawlerProcess(settings={"FEEDS": {"items.json": {"format": "json"}}})
 
     process.crawl(TJRJSpider)
     process.start()
+
+
+if __name__ == "__main__":
+    main()
