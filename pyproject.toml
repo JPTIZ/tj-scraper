@@ -16,6 +16,7 @@ pylint = "^2.7.2"
 flake8 = "^3.8.4"
 pre-commit = "^2.14.0"
 mypy = "^0.910"
+black = "^21.9b0"
 
 [tool.mypy]
 ignore_missing_imports = true
