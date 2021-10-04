@@ -25,7 +25,9 @@ jobs:
         run: poetry run black --check --diff .
       - name: Pylint
         if: always()
-        run: poetry run pylint .
+        run: |
+          poetry run pylint tj_scraper
+          poetry run pylint tests
       - name: Tests
         if: always()
         run: poetry run pytest
