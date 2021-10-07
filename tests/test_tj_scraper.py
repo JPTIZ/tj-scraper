@@ -7,8 +7,6 @@ import pytest
 from tj_scraper import (
     run_spider,
     TJRJSpider,
-    BlockedByCaptcha,
-    BadProcessId,
 )
 
 
@@ -17,6 +15,10 @@ class LocalTJRJSpider(TJRJSpider):
     Simulates TJRJ Spider by fetching local files instead of the real
     website.
     """
+
+    start_urls = [
+        f"file://{Path.cwd() / 'samples' / 'invalid-numProcesso.html'}",
+    ]
 
 
 # pylint: disable=redefined-outer-name
@@ -64,33 +66,41 @@ def test_fetch_subject_from_a_process_page(items_sink, crawler_settings):
     )
 
 
-def test_fail_on_invalid_process_page(crawler_settings):
+def test_do_not_include_invalid_process_page(items_sink, crawler_settings):
     """
-    Tests if an unexistent proccess ID page is correctly detected.
+    Tests if an unexistent proccess ID page is not added to sink.
     """
     start_urls = [
         f"file://{Path.cwd() / 'samples' / 'invalid-numProcesso.html'}",
     ]
 
-    with pytest.raises(BadProcessId):
-        run_spider(
-            LocalTJRJSpider,
-            start_urls=start_urls,
-            settings=crawler_settings,
-        )
+    run_spider(
+        LocalTJRJSpider,
+        start_urls=start_urls,
+        settings=crawler_settings,
+    )
+
+    with jsonlines.open(items_sink) as sink_file:
+        data = [*sink_file]
+
+    assert not data
 
 
-def test_detect_captcha_page(crawler_settings):
+def test_detect_captcha_page(items_sink, crawler_settings):
     """
     Tests if an unexistent proccess ID page is correctly detected.
     """
     start_urls = [
-        f"file://{Path.cwd() / 'samples' / 'processo-1.html'}",
+        f"file://{Path.cwd() / 'samples' / 'with-captcha.html'}",
     ]
 
-    with pytest.raises(BlockedByCaptcha):
-        run_spider(
-            LocalTJRJSpider,
-            start_urls=start_urls,
-            settings=crawler_settings,
-        )
+    run_spider(
+        LocalTJRJSpider,
+        start_urls=start_urls,
+        settings=crawler_settings,
+    )
+
+    with jsonlines.open(items_sink) as sink_file:
+        data = [*sink_file]
+
+    assert not data

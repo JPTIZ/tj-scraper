@@ -59,11 +59,12 @@ def check_for_valid_id(process_id: int, response: Response):
     Raises an `BadProcessId` if response page is an error page stating the
     process_id is invalid
     """
-    error_xpath = "//content/content100/h3/text()"
+    error_xpath = "//title/text()"
     try:
         h3_content = response.xpath(error_xpath).get().strip()
     except AttributeError:
         return
+
     if h3_content.lower() == "erro":
         raise BadProcessId(process_id)
 
@@ -76,7 +77,7 @@ def extract_process_id(response: Response):
     def try_or_false(function):
         try:
             return function()
-        except AttributeError:
+        except (AttributeError, IndexError):
             return False
 
     def assume_good_page():
@@ -134,7 +135,6 @@ class TJRJSpider(Spider):
         yield Process(process_id, "RJ", page_content.replace("\n", ""))
 
 
-# the wrapper to make it run more times
 def run_spider(spider, **kwargs):
     """
     Runs a spider in a separated subprocess, enabling to run multiple spiders
@@ -144,8 +144,10 @@ def run_spider(spider, **kwargs):
     def _run_spider(queue):
         runner = CrawlerRunner(kwargs.get("settings", {}))
         deferred = runner.crawl(spider, **kwargs)
+        # Just to shut mypy errors due to bad Twisted design
         reactor.stop = reactor.stop or (lambda x: x)
         reactor.run = reactor.run or (lambda x: x)
+        # --
         deferred.addBoth(lambda _: reactor.stop())
         reactor.run()
         queue.put(None)
