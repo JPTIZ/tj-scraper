@@ -2,6 +2,7 @@
 import multiprocessing as mp
 from dataclasses import dataclass
 from collections.abc import Collection
+from pathlib import Path
 
 from importlib_metadata import version
 
@@ -99,12 +100,14 @@ def extract_page_content(response: Response):
     check_for_captcha(process_id, response)
     check_for_valid_id(process_id, response)
 
-    subject_xpath = "//form/table/tbody/tr[20]/td[2]/text()"
+    subject_xpath = "//td[text()='Assunto:']/following-sibling::td/text()"
     try:
         content = response.xpath(subject_xpath).get().strip()
         return process_id, content
     except AttributeError:
-        with open("results/failed.html", "wb") as failed_file:
+        failed_page = Path("results/failed.html")
+        failed_page.parent.mkdir(parents=True, exist_ok=True)
+        with open(failed_page, "wb") as failed_file:
             failed_file.write(response.body)
         raise
 
