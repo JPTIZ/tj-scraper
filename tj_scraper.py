@@ -1,12 +1,14 @@
 """A package of tools for brazilian Tribunal de Justiça pages."""
 import multiprocessing as mp
+import sys
 from dataclasses import dataclass
 from collections.abc import Collection
 from pathlib import Path
+from typing import Callable
 
 from importlib_metadata import version
 
-from scrapy.crawler import CrawlerProcess, CrawlerRunner, Spider
+from scrapy.crawler import CrawlerRunner, Spider
 from scrapy.http import Response
 from twisted.internet import reactor
 
@@ -32,7 +34,7 @@ class BlockedByCaptcha(Exception):
     """
 
 
-def build_url(page, params):
+def build_url(page: str, params: dict[str, str]):
     """Builds URL with correct query string. For API purposes."""
     query_string = "&".join(f"{p}={v}" for p, v in params.items())
 
@@ -43,19 +45,19 @@ def build_url(page, params):
 class Process:
     """The information we want from a single process from a TJ."""
 
-    process_id: int
+    process_id: str
     uf: str  # pylint: disable=invalid-name
     subject: str
 
 
-def check_for_captcha(process_id: int, response: Response):
+def check_for_captcha(process_id: str, response: Response):
     """
     Raises a `BlockedByCaptcha` if response page has a captcha on it.
     """
     return process_id, response
 
 
-def check_for_valid_id(process_id: int, response: Response):
+def check_for_valid_id(process_id: str, response: Response):
     """
     Raises an `BadProcessId` if response page is an error page stating the
     process_id is invalid
@@ -70,18 +72,18 @@ def check_for_valid_id(process_id: int, response: Response):
         raise BadProcessId(process_id)
 
 
-def extract_process_id(response: Response):
+def extract_process_id(response: Response) -> str:
     """
     Extracts process ID from response HTML.
     """
 
-    def try_or_false(function):
+    def try_or_false(function: Callable[[], str]) -> str:
         try:
             return function()
         except (AttributeError, IndexError):
-            return False
+            return ""
 
-    def assume_good_page():
+    def assume_good_page() -> str:
         xpath = "//form/table/tbody/tr[3]/td[1]/h2/text()"
         return response.xpath(xpath)[1].get().strip()
 
@@ -171,13 +173,29 @@ def processes_by_subject(words: Collection[str]) -> Collection[Process]:
     return []
 
 
-def main():
+def main(*args: str):
     """Program's start point. May be used to simulate program execution."""
-    process = CrawlerProcess(settings={"FEEDS": {"items.json": {"format": "json"}}})
+    try:
+        _, process_id = args
+    except IndexError:
+        print(f"Uso: {args[0]} <Nº do processo>")
+        sys.exit(0)
+    start_urls = [build_tjrj_process_url(process_id)]
 
-    process.crawl(TJRJSpider)
-    process.start()
+    sink = Path("items.json")
+    crawler_settings = {
+        "FEED_EXPORT_ENCODING": "utf-8",
+        "FEEDS": {
+            sink: {"format": "jsonlines"},
+        },
+    }
+
+    run_spider(
+        TJRJSpider,
+        start_urls=start_urls,
+        settings=crawler_settings,
+    )
 
 
 if __name__ == "__main__":
-    main()
+    main(*sys.argv)
