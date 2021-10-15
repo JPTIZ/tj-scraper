@@ -4,7 +4,7 @@ import sys
 from dataclasses import dataclass
 from collections.abc import Collection
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional, Union
 
 from importlib_metadata import version
 
@@ -173,14 +173,104 @@ def processes_by_subject(words: Collection[str]) -> Collection[Process]:
     return []
 
 
+def print_usage(exe_name):
+    """Prints a user-friendly minimal guide to use this software."""
+    # pylint: disable=line-too-long
+    from textwrap import dedent
+
+    print(
+        dedent(
+            f"""
+        Uso: {exe_name} <Nº do processo>
+             {exe_name} <intervalo de nºs de processos>
+
+             Passando apenas o Nº do processo, o programa irá adquirir apenas
+             as informações do processo com tal nº e não buscará por outros.
+
+             Passando um intervalo no formato "<nº inicial>..<nº final>", o
+             programa irá buscar por todos os processos indo do nº inicial ao
+             nº final.
+
+        Exemplos:
+
+            - Buscar informações do processo 2021.000.000000-0:
+                Comando:
+                    {exe_name} 2021.000.000000-0
+
+                Resultado:
+                    {{"process_id": "2021.000.000000-0", "uf": "RJ", "subject": "Exemplo"}}
+
+            - Buscar informações dos processos 2021.000.000000-0 ao 2021.000.000000-3:
+                Comando:
+                    {exe_name} 2021.000.000000-0..2021.000.000000-3
+
+                Resultado:
+                    {{"process_id": "2021.000.000000-0", "uf": "RJ", "subject": "Exemplo 1"}}
+                    {{"process_id": "2021.000.000000-1", "uf": "RJ", "subject": "Exemplo 2"}}
+                    {{"process_id": "2021.000.000000-2", "uf": "RJ", "subject": "Exemplo 3"}}
+                    {{"process_id": "2021.000.000000-3", "uf": "RJ", "subject": "Exemplo 4"}}
+    """
+        ).strip()
+    )
+
+
 def main(*args: str):
     """Program's start point. May be used to simulate program execution."""
+
+    def id_or_range(process_id: str) -> Union[tuple[str, str], str]:
+        start, *end = process_id.split("..")
+        if end:
+            return start, end[0]
+        return start
+
+    def to_parts(process_id: str) -> list[str]:
+        return process_id.replace("-", ".").split(".")
+
+    def cap_with_carry(number: int, limit: int) -> tuple[int, int]:
+        return number % limit, number // limit
+
+    # Example: 2021.001.150080-0
+    def next_(range_: tuple[str, str]) -> Optional[str]:
+        start, end = ([int(part) for part in to_parts(id_)] for id_ in range_)
+
+        if not any(x < y for x, y in zip(start, end)):
+            return None
+
+        year, class_1, class_2, digit = start
+        digit, carry = cap_with_carry(digit + 1, 10)
+        class_2, carry = cap_with_carry(class_2 + carry, 1000000)
+        class_1, carry = cap_with_carry(class_1 + carry, 1000)
+        year += carry
+
+        return f"{year:04}.{class_1:03}.{class_2:06}-{digit:1}"
+
+    def all_from(range_: Union[tuple[str, str], str]):
+        if isinstance(range_, str):
+            print(f"{range_} is a simple string")
+            yield range_
+            return
+
+        assert not isinstance(range_, str)
+        start, end = range_
+
+        while (start_ := next_((start, end))) is not None:
+            start = start_
+            yield start
+
     try:
-        _, process_id = args
+        arg = args[1]
     except IndexError:
-        print(f"Uso: {args[0]} <Nº do processo>")
-        sys.exit(0)
-    start_urls = [build_tjrj_process_url(process_id)]
+        print_usage("tj_scraper")
+        return 0
+
+    if arg == "--help":
+        print_usage("tj_scraper")
+        return 0
+
+    all_from_range = all_from(id_or_range(arg))
+    ids = [*all_from_range]
+    start_urls = [build_tjrj_process_url(id_) for id_ in ids]
+    print(f"{start_urls=}")
 
     sink = Path("items.json")
     crawler_settings = {
@@ -196,6 +286,8 @@ def main(*args: str):
         settings=crawler_settings,
     )
 
+    return 0
+
 
 if __name__ == "__main__":
-    main(*sys.argv)
+    sys.exit(main(*sys.argv))
