@@ -214,6 +214,28 @@ def print_usage(exe_name):
     )
 
 
+def download_all_from_range(ids: list[str], sink: Path):
+    """
+    Downloads relevant info from all valid process with ID in `ids` and saves
+    it into `sink`. Expects `sink` to be in JSONLines format.
+    """
+    start_urls = [build_tjrj_process_url(id_) for id_ in ids]
+    print(f"{start_urls=}")
+
+    crawler_settings = {
+        "FEED_EXPORT_ENCODING": "utf-8",
+        "FEEDS": {
+            sink: {"format": "jsonlines"},
+        },
+    }
+
+    run_spider(
+        TJRJSpider,
+        start_urls=start_urls,
+        settings=crawler_settings,
+    )
+
+
 def main(*args: str):
     """Program's start point. May be used to simulate program execution."""
 
@@ -269,22 +291,8 @@ def main(*args: str):
 
     all_from_range = all_from(id_or_range(arg))
     ids = [*all_from_range]
-    start_urls = [build_tjrj_process_url(id_) for id_ in ids]
-    print(f"{start_urls=}")
 
-    sink = Path("items.json")
-    crawler_settings = {
-        "FEED_EXPORT_ENCODING": "utf-8",
-        "FEEDS": {
-            sink: {"format": "jsonlines"},
-        },
-    }
-
-    run_spider(
-        TJRJSpider,
-        start_urls=start_urls,
-        settings=crawler_settings,
-    )
+    download_all_from_range(ids, Path("items.jsonl"))
 
     return 0
 
