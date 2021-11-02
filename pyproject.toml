@@ -9,6 +9,7 @@ python = "^3.9"
 Scrapy = "^2.4.1"
 importlib-metadata = "^4.0.1"
 jsonlines = "^2.0.0"
+requests = "^2.26.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
@@ -17,15 +18,21 @@ flake8 = "^3.8.4"
 pre-commit = "^2.14.0"
 mypy = "^0.910"
 black = "^21.9b0"
+types-requests = "^2.25.11"
 
 [tool.mypy]
 ignore_missing_imports = true
 
-[tool.pylint.'MESSAGES CONTROL']
+[tool.pylint.messages_control]
 max-line-length = 88
 disable = [
     "import-outside-toplevel",
     "line-too-long",
+]
+
+[tool.pylint.typecheck]
+ignored-classes = [
+    "Reader",
 ]
 
 [build-system]
