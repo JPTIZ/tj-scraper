@@ -2,9 +2,11 @@
 A program that fetches information from brazilian Tribunal de Justiça pages.
 """
 import sys
+from collections.abc import Collection
 from pathlib import Path
+from typing import Any, Callable, Union
 
-from .process import all_from, id_or_range
+from .process import all_from, id_or_range, Process
 
 
 def print_usage(exe_name):
@@ -48,11 +50,23 @@ def print_usage(exe_name):
     )
 
 
-def download_all_from_range(ids: list[str], sink: Path):
+def download_all_from_range(
+    ids: list[str],
+    sink: Path,
+    fetch_all: bool = True,
+    filter_function: Callable[[dict[str, Any]], bool] = lambda _: True,
+):
     """
     Downloads relevant info from all valid process with ID in `ids` and saves
     it into `sink`. Expects `sink` to be in JSONLines format.
     """
+
+    def is_invalid_process(data):
+        return data in (
+            ["Número do processo inválido."],
+            ["O processo informado não foi encontrado."],
+        )
+
     import requests
     import jsonlines
 
@@ -69,8 +83,22 @@ def download_all_from_range(ids: list[str], sink: Path):
                 "codigoProcesso": id_,
             },
         )
-        data = {k: v for k, v in response.json().items() if k in fields}
-        print(f"{id_}: {data}")
+
+        data = response.json()
+
+        if is_invalid_process(data):
+            print(f"{id_}: Invalid/Not Found")
+            continue
+
+        if not filter_function(data):
+            print(f"{id_}: Filtered  -- ({data.get('txtAssunto', 'Sem Assunto')})")
+            continue
+
+        if fetch_all:
+            fields = data.keys()
+
+        data = {k: v for k, v in data.items() if k in fields}
+        print(f"{id_}: {data.get('txtAssunto', 'Sem Assunto')}")
 
         with jsonlines.open(sink, mode="a") as sink_f:
             sink_f.write(data)
@@ -92,6 +120,28 @@ def download_all_from_range(ids: list[str], sink: Path):
     # )
 
 
+def processes_by_subject(
+    id_range: Union[tuple[str, str], str], words: Collection[str]
+) -> Collection[Process]:
+    """Search for processes that contain the given words on its subject."""
+
+    def has_word_in_subject(data: dict[str, Any]):
+        return any(
+            word.lower() in data.get("txtAssunto", "Sem Assunto").lower()
+            for word in words
+        )
+
+    print(f"Filtering by: {words}")
+
+    all_from_range = all_from(id_range)
+    ids = [*all_from_range]
+
+    download_all_from_range(
+        ids, Path("results") / "items.jsonl", filter_function=has_word_in_subject
+    )
+    return []
+
+
 def main(*args: str):
     """Program's start point. May be used to simulate program execution."""
 
@@ -105,10 +155,7 @@ def main(*args: str):
         print_usage("tj_scraper")
         return 0
 
-    all_from_range = all_from(id_or_range(arg))
-    ids = [*all_from_range]
-
-    download_all_from_range(ids, Path("results") / "items.jsonl")
+    processes_by_subject(id_or_range(arg), ["furto"])
 
     return 0
 
