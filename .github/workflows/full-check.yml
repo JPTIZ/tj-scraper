@@ -28,6 +28,6 @@ jobs:
         run: |
           poetry run pylint tj_scraper
           poetry run pylint tests
-      - name: Tests
-        if: always()
-        run: poetry run pytest
+          # - name: Tests
+          #   if: always()
+          #   run: poetry run pytest
