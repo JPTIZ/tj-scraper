@@ -61,47 +61,79 @@ def download_all_from_range(
     it into `sink`. Expects `sink` to be in JSONLines format.
     """
 
+    import aiohttp
+    import asyncio
+    import jsonlines
+    import json
+
+    results = Path("results")
+
+    def cache(data):
+        # with open(results / "cache-valid.json", "w+") as f:
+        #     valids = json.load(f)
+        #     valids[data[]]
+
+        with jsonlines.open(results / "cache.jsonl", mode="a") as sink_f:
+            sink_f.write(data)
+
     def is_invalid_process(data):
         return data in (
             ["Número do processo inválido."],
             ["O processo informado não foi encontrado."],
         )
 
-    import requests
-    import jsonlines
-
-    base_url = (
-        "https://www3.tjrj.jus.br/consultaprocessual/api/processos/por-numero/publica"
-    )
-    fields = ["idProc", "codProc"]
-
-    for id_ in ids:
-        response = requests.post(
+    async def fetch_process(session: aiohttp.ClientSession, id_: str):
+        async with session.post(
             base_url,
             json={
                 "tipoProcesso": "1",
                 "codigoProcesso": id_,
             },
-        )
-
-        data = response.json()
+        ) as response:
+            data = json.loads(await response.text())
 
         if is_invalid_process(data):
-            print(f"{id_}: Invalid/Not Found")
-            continue
+            # print(f"{id_}: Invalid/Not Found")
+            return
 
         if not filter_function(data):
-            print(f"{id_}: Filtered  -- ({data.get('txtAssunto', 'Sem Assunto')})")
-            continue
+            cache(data)
+            print(
+                f"{id_}: Filtered  -- ({data.get('txtAssunto', 'Sem Assunto')}) -- Cached"
+            )
+            return
 
         if fetch_all:
             fields = data.keys()
 
         data = {k: v for k, v in data.items() if k in fields}
         print(f"{id_}: {data.get('txtAssunto', 'Sem Assunto')}")
+        return data
 
-        with jsonlines.open(sink, mode="a") as sink_f:
-            sink_f.write(data)
+    async def fetch_all_processes(ids):
+        step = 1000
+        async with aiohttp.ClientSession() as session:
+            for start in range(0, len(ids), step):
+                print(f"Wave: {(start // step) + 1}")
+                end = min(start + step, len(ids))
+                sub_ids = ids[start:end]
+                requests = (fetch_process(session, id_) for id_ in sub_ids)
+                data = await asyncio.gather(
+                    *requests,
+                )
+
+                data = [item for item in data if item is not None]
+                with jsonlines.open(sink, mode="a") as sink_f:
+                    sink_f.write_all(data)
+                print(f"Partial result: {data}")
+        print("Finished.")
+
+    base_url = (
+        "https://www3.tjrj.jus.br/consultaprocessual/api/processos/por-numero/publica"
+    )
+    # fields = ["idProc", "codProc"]
+
+    asyncio.run(fetch_all_processes(ids))
 
     # start_urls = [build_tjrj_process_url(id_) for id_ in ids]
     # print(f"{start_urls=}")
