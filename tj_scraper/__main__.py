@@ -6,7 +6,12 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Any, Callable, Union
 
+from typer import Typer
+
 from .process import all_from, id_or_range, Process
+
+
+app = Typer()
 
 
 def print_usage(exe_name):
@@ -101,7 +106,7 @@ def download_all_from_range(
             print(
                 f"{id_}: Filtered  -- ({data.get('txtAssunto', 'Sem Assunto')}) -- Cached"
             )
-            return
+            return "Filtered"
 
         if fetch_all:
             fields = data.keys()
@@ -111,21 +116,29 @@ def download_all_from_range(
         return data
 
     async def fetch_all_processes(ids):
-        step = 1000
+        step = 100
         async with aiohttp.ClientSession() as session:
             for start in range(0, len(ids), step):
-                print(f"Wave: {(start // step) + 1}")
                 end = min(start + step, len(ids))
                 sub_ids = ids[start:end]
+                print(f"Wave: {(start // step) + 1} ({sub_ids[0]}..{sub_ids[-1]})")
                 requests = (fetch_process(session, id_) for id_ in sub_ids)
                 data = await asyncio.gather(
                     *requests,
                 )
 
-                data = [item for item in data if item is not None]
+                filtered = sum(
+                    1 if item != "Filtered" else 0 for item in data if item is not None
+                )
+                invalid = sum(1 if item is None else 0 for item in data)
+                data = [
+                    item for item in data if item is not None and item != "Filtered"
+                ]
                 with jsonlines.open(sink, mode="a") as sink_f:
                     sink_f.write_all(data)
-                print(f"Partial result: {data}")
+                print(
+                    f"Partial result: {data} ({filtered} filtered, {invalid} invalid)"
+                )
         print("Finished.")
 
     base_url = (
@@ -185,6 +198,15 @@ def main(*args: str):
 
     if arg == "--help":
         print_usage("tj_scraper")
+        return 0
+
+    if "--export" in args:
+        import jsonlines
+        from .export import export_to_xlsx
+
+        with jsonlines.open(Path("results") / "items.jsonl") as reader:
+            data = [item for item in reader if item != "Filtered"]
+            export_to_xlsx(data, Path("exported.xlsx"))
         return 0
 
     processes_by_subject(id_or_range(arg), ["furto"])

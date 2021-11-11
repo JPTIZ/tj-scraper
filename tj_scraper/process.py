@@ -61,6 +61,7 @@ def all_from(range_: Union[tuple[str, str], str]):
 
     assert not isinstance(range_, str)
     start, end = range_
+    yield start
 
     while (start_ := next_((start, end))) is not None:
         start = start_
