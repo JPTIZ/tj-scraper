@@ -3,6 +3,9 @@ from dataclasses import dataclass
 from typing import Optional, Union
 
 
+IdRange = Union[tuple[str, str], str]
+
+
 @dataclass
 class Process:
     """The information we want from a single process from a TJ."""
@@ -38,6 +41,7 @@ def next_(range_: tuple[str, str]) -> Optional[str]:
     Returns the next valid process ID within specified range.
 
     Example: 2021.001.150080-0 -> 2021.001.150080-1.
+             0169689-05.2021.8.19.0001 -> 0169689-05.2021.8.19.0002
     """
     start, end = ([int(part) for part in to_parts(id_)] for id_ in range_)
 
