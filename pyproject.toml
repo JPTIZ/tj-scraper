@@ -36,6 +36,7 @@ disable = [
 [tool.pylint.typecheck]
 ignored-classes = [
     "Reader",
+    "Writer",
 ]
 
 [build-system]

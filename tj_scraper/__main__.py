@@ -2,6 +2,7 @@
 A program that fetches information from brazilian Tribunal de Justiça pages.
 """
 from collections.abc import Collection
+from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -13,17 +14,17 @@ from .process import all_from, id_or_range, IdRange, Process
 app = Typer()
 
 
-def download_all_from_range(
+FilterFunction = Callable[[dict[str, Any]], bool]
+DownloadFunction = Callable[[list[str], Path, bool, FilterFunction], None]
+
+
+def download_from_json(
     ids: list[str],
     sink: Path,
     fetch_all: bool = True,
-    filter_function: Callable[[dict[str, Any]], bool] = lambda _: True,
+    filter_function: FilterFunction = lambda _: True,
 ):
-    """
-    Downloads relevant info from all valid process with ID in `ids` and saves
-    it into `sink`. Expects `sink` to be in JSONLines format.
-    """
-
+    """Downloads data from urls that return JSON values."""
     import aiohttp
     import asyncio
     import jsonlines
@@ -37,7 +38,7 @@ def download_all_from_range(
         #     valids[data[]]
 
         with jsonlines.open(results / "cache.jsonl", mode="a") as sink_f:
-            sink_f.write(data)
+            sink_f.write(data)  # type: ignore
 
     def is_invalid_process(data):
         return data in (
@@ -66,8 +67,7 @@ def download_all_from_range(
             )
             return "Filtered"
 
-        if fetch_all:
-            fields = data.keys()
+        fields = data.keys() if fetch_all else ["idProc", "codProc"]
 
         data = {k: v for k, v in data.items() if k in fields}
         print(f"{id_}: {data.get('txtAssunto', 'Sem Assunto')}")
@@ -95,7 +95,7 @@ def download_all_from_range(
                     item for item in data if item is not None and item != "Filtered"
                 ]
                 with jsonlines.open(sink, mode="a") as sink_f:
-                    sink_f.write_all(data)
+                    sink_f.write_all(data)  # type: ignore
                 print(
                     f"Partial result: {data} ({filtered} filtered, {invalid} invalid)"
                 )
@@ -104,29 +104,53 @@ def download_all_from_range(
     base_url = (
         "https://www3.tjrj.jus.br/consultaprocessual/api/processos/por-numero/publica"
     )
-    # fields = ["idProc", "codProc"]
 
     asyncio.run(fetch_all_processes(ids))
 
-    # start_urls = [build_tjrj_process_url(id_) for id_ in ids]
-    # print(f"{start_urls=}")
 
-    # crawler_settings = {
-    #     "FEED_EXPORT_ENCODING": "utf-8",
-    #     "FEEDS": {
-    #         sink: {"format": "jsonlines"},
-    #     },
-    # }
+def download_from_html(
+    ids: list[str],
+    sink: Path,
+):
+    """Downloads data by crawling through possible URLs. Warning: not updated"""
+    from .html import run_spider, TJRJSpider
+    from .url import build_tjrj_process_url
 
-    # run_spider(
-    #     TJRJSpider,
-    #     start_urls=start_urls,
-    #     settings=crawler_settings,
-    # )
+    start_urls = [build_tjrj_process_url(id_) for id_ in ids]
+    print(f"{start_urls=}")
+
+    crawler_settings = {
+        "FEED_EXPORT_ENCODING": "utf-8",
+        "FEEDS": {
+            sink: {"format": "jsonlines"},
+        },
+    }
+
+    run_spider(
+        TJRJSpider,
+        start_urls=start_urls,
+        settings=crawler_settings,
+    )
+
+
+def download_all_from_range(
+    ids: list[str],
+    sink: Path,
+    fetch_all: bool = True,
+    filter_function: FilterFunction = lambda _: True,
+    download_function: DownloadFunction = download_from_json,
+):
+    """
+    Downloads relevant info from all valid process with ID in `ids` and saves
+    it into `sink`. Expects `sink` to be in JSONLines format.
+    """
+    download_function(ids, sink, fetch_all, filter_function)
 
 
 def processes_by_subject(
-    id_range: IdRange, words: Collection[str]
+    id_range: IdRange,
+    words: Collection[str],
+    download_function: DownloadFunction,
 ) -> Collection[Process]:
     """Search for processes that contain the given words on its subject."""
 
@@ -142,7 +166,10 @@ def processes_by_subject(
     ids = [*all_from_range]
 
     download_all_from_range(
-        ids, Path("results") / "items.jsonl", filter_function=has_word_in_subject
+        ids,
+        Path("results") / "items.jsonl",
+        filter_function=has_word_in_subject,
+        download_function=download_function,
     )
     return []
 
@@ -163,14 +190,27 @@ def export(input_: Path, output: Path):
     from .export import export_to_xlsx
 
     with jsonlines.open(input_) as reader:
-        data = [item for item in reader if item != "Filtered"]
+        data = [item for item in reader if item != "Filtered"]  # type: ignore
         export_to_xlsx(data, output)
+
+
+class DownloadModes(str, Enum):
+    """
+    Which download mode to use. HTML downloads from HTML pages, JSON downloads
+    from JSON response bodies.
+    """
+
+    HTML = "html"
+    JSON = "json"
 
 
 @app.command()
 def download(
     id_range: str = Argument(
         ..., help="Intervalo ou número específico do processo", metavar="INTERVALO"
+    ),
+    mode: DownloadModes = Argument(
+        DownloadModes.JSON.value,
     ),
     subjects: Optional[list[str]] = Option(
         ...,
@@ -215,7 +255,16 @@ def download(
                 {{"process_id": "2021.000.000000-3", ...}}
     """
 
-    processes_by_subject(id_or_range(id_range), subjects or [])
+    download_function = {
+        DownloadModes.HTML: download_from_html,
+        DownloadModes.JSON: download_from_json,
+    }[mode]
+
+    processes_by_subject(
+        id_or_range(id_range),
+        subjects or [],
+        download_function=download_function,  # type: ignore
+    )
 
 
 if __name__ == "__main__":
