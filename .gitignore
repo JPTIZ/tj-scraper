@@ -1,5 +1,10 @@
+# Python default
+__pycache__
+
+# Generated
 *.log
 items.json
-__pycache__
-samples/
+*.xlsx
+*.txt
 results
+samples/

@@ -15,7 +15,7 @@ class Process:
     subject: str
 
 
-def id_or_range(process_id: str) -> Union[tuple[str, str], str]:
+def id_or_range(process_id: str) -> IdRange:
     """Evaluates a "<start>..<end>" or a "<process id>" string."""
     start, *end = process_id.split("..")
     if end:
@@ -57,7 +57,7 @@ def next_(range_: tuple[str, str]) -> Optional[str]:
     return f"{year:04}.{class_1:03}.{class_2:06}-{digit:1}"
 
 
-def all_from(range_: Union[tuple[str, str], str]):
+def all_from(range_: IdRange):
     """Yields all valid process IDs from range (or the provided ID if not a range)."""
     if isinstance(range_, str):
         yield range_
