@@ -13,6 +13,8 @@ class Process:
     process_id: str
     uf: str  # pylint: disable=invalid-name
     subject: str
+    lawyers: list[str]
+    extras: list[dict[str, str]]
 
 
 def id_or_range(process_id: str) -> IdRange:
