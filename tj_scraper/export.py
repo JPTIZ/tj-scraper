@@ -55,6 +55,18 @@ def flatten(process: dict[str, Union[str, list[Object]]]) -> dict[str, str]:
             result[f"Devolucao{i}"] = str(mandado.get("devolucao", ""))  # type: ignore
             result[f"DevolucaoOJA{i}"] = str(mandado.get("devolucaoOJA", ""))  # type: ignore
 
+    if "personagens" in process:
+        personagem: Object
+        for personagem in process.pop("personagens"):  # type: ignore
+            info = {
+                "Código": personagem["codPers"],
+                "Nome": personagem["nome"],
+                "TipoPolo": personagem["tipoPolo"],
+            }
+            category = personagem["descPers"]
+            for field, value in info.items():
+                result[f"{category}{field}"] = value
+
     ultimo_movimento: Object = process.pop("ultMovimentoProc")  # type: ignore
     result["UltimoMovimentoCodTipAud"] = str(ultimo_movimento.pop("codTipAnd"))
     result["UltimoMovimentoOrdem"] = str(ultimo_movimento.pop("ordem"))
@@ -148,6 +160,6 @@ def export_to_xlsx(raw_data: Collection[Process], path: Path) -> None:
 
     for row, process in enumerate(data, start=1):
         for col, key in enumerate(keys, start=1):
-            sheet.cell(column=col, row=row, value=str(process.get(key, "")))
+            sheet.cell(column=col, row=row, value=str(process.get(key, "")))  # type: ignore
 
     book.save(path)
