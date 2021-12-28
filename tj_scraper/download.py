@@ -184,6 +184,7 @@ def processes_by_subject(
     cache_file: Path = Path("results") / "cache.jsonl",
 ):
     """Search for processes that contain the given words on its subject."""
+    from .timing import timeit
 
     def has_word_in_subject(data: dict[str, Any]):
         return any(
@@ -194,7 +195,7 @@ def processes_by_subject(
     print(f"Filtering by: {words}")
 
     all_from_range = all_from(id_range)
-    ids = skip_cached(all_from_range, cache_file=cache_file)
+    ids = timeit(filter_cached, all_from_range, cache_file=cache_file)
 
     download_all_from_range(
         ids,
