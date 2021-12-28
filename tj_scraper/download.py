@@ -153,11 +153,35 @@ def download_all_from_range(
     download_function(ids, sink, fetch_all, filter_function)
 
 
+def skip_cached(ids: list[str], cache_file: Path) -> list[str]:
+    """Filters IDs that are already cached."""
+    import jsonlines
+
+    filtered = []
+    ids = [*ids]
+    cached_ids = set()
+    with jsonlines.open(cache_file) as reader:
+        for item in reader:  # type: ignore
+            match item:
+                case {"codProc": cached_id}:
+                    cached_ids |= {cached_id}
+
+    for id_ in ids[:50]:
+        cached = id_ in cached_ids
+
+        if not cached:
+            filtered += [id_]
+        else:
+            print(f"{id_}: Cached")
+    return filtered
+
+
 def processes_by_subject(
     id_range: IdRange,
     words: Collection[str],
     download_function: DownloadFunction,
     output: Path = Path("results") / "raw.jsonl",
+    cache_file: Path = Path("results") / "cache.jsonl",
 ):
     """Search for processes that contain the given words on its subject."""
 
@@ -170,7 +194,7 @@ def processes_by_subject(
     print(f"Filtering by: {words}")
 
     all_from_range = all_from(id_range)
-    ids = [*all_from_range]
+    ids = skip_cached(all_from_range, cache_file=cache_file)
 
     download_all_from_range(
         ids,
