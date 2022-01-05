@@ -48,12 +48,14 @@ def flatten(process: dict[str, Union[str, list[Object]]]) -> dict[str, str]:
         assert not divida
 
     if "mandado" in process:
-        mandado: list[Object]
+        mandado: Object
         for i, mandado in enumerate(process.pop("mandado"), start=1):  # type: ignore
-            result[f"CodResultadoMandado{i}"] = str(mandado["codResultadoMandado"])  # type: ignore
-            result[f"DescricaoResultadoMandado{i}"] = str(mandado["descricaoResultadoMandado"])  # type: ignore
-            result[f"Devolucao{i}"] = str(mandado.get("devolucao", ""))  # type: ignore
-            result[f"DevolucaoOJA{i}"] = str(mandado.get("devolucaoOJA", ""))  # type: ignore
+            result[f"CodResultadoMandado{i}"] = str(mandado["codResultadoMandado"])
+            result[f"DescricaoResultadoMandado{i}"] = str(
+                mandado["descricaoResultadoMandado"]
+            )
+            result[f"Devolucao{i}"] = str(mandado.get("devolucao", ""))
+            result[f"DevolucaoOJA{i}"] = str(mandado.get("devolucaoOJA", ""))
 
     if "personagens" in process:
         personagem: Object
@@ -160,6 +162,7 @@ def export_to_xlsx(raw_data: Collection[Process], path: Path) -> None:
 
     for row, process in enumerate(data, start=1):
         for col, key in enumerate(keys, start=1):
-            sheet.cell(column=col, row=row, value=str(process.get(key, "")))  # type: ignore
+            # type: ignore
+            sheet.cell(column=col, row=row, value=str(process.get(key, "")))
 
     book.save(path)

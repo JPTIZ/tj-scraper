@@ -5,7 +5,11 @@ from typing import Optional
 
 from typer import Argument, Option, Typer
 
-from .download import download_from_html, download_from_json, processes_by_subject
+from .download import (
+    download_from_html,
+    download_from_json,
+    processes_by_subject,
+)
 from .process import id_or_range
 
 
@@ -44,7 +48,10 @@ def make_app():
         subjects: Optional[list[str]] = Option(
             ...,
             "--assuntos",
-            help="Filtrar por determinadas palavras que aparecerem no assunto dos processos",
+            help=(
+                "Filtrar por determinadas palavras que aparecerem no assunto"
+                " dos processos",
+            ),
         ),
     ) -> None:
         """

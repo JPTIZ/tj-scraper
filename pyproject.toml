@@ -5,7 +5,7 @@ description = ""
 authors = ["João Paulo Taylor Ienczak Zanette <jpaulotiz@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
 Scrapy = "^2.4.1"
 importlib-metadata = "^4.0.1"
 jsonlines = "^2.0.0"
@@ -20,7 +20,7 @@ pylint = "^2.7.2"
 flake8 = "^3.8.4"
 pre-commit = "^2.14.0"
 mypy = "^0.910"
-black = "^21.9b0"
+black = "21.12b0"
 types-requests = "^2.25.11"
 
 [tool.mypy]
@@ -38,6 +38,9 @@ ignored-classes = [
     "Reader",
     "Writer",
 ]
+
+[tool.pyright]
+ignore = ["tj_scraper/cli.py"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
