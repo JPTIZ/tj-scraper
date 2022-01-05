@@ -17,6 +17,32 @@ def make_app():
     """Creates CLI application."""
     app = Typer()
 
+    cache_cmd = Typer()
+
+    @app.command()
+    def cache():
+        """Operações relacionadas à cache."""
+        pass
+
+    @cache_cmd.command()
+    def info(
+        cache_file: Path = Path("results") / "cache.jsonl",
+    ):
+        with open(cache_file) as cache:
+            for i, _ in enumerate(cache.readlines(), start=1):
+                pass
+        print(f"Cache file has a total of {i} entries")
+
+    @cache_cmd.command()
+    def dedup(
+        cache_file: Path = Path("results") / "cache.jsonl",
+    ):  # pylint: disable=unused-variable
+        from .cache import dedup_cache
+
+        dedup_cache(cache_file)
+
+    app.add_typer(cache_cmd, name="cache")
+
     @app.command()
     def export(input_: Path, output: Path):  # pylint: disable=unused-variable
         """Exporta os dados para uma planilha XLSX."""
