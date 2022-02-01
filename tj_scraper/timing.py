@@ -3,10 +3,14 @@ from time import time
 from typing import Callable
 
 
-def timeit(f: Callable, *args, **kwargs):
+def report_time(function: Callable, *args, **kwargs):
+    """
+    Runs a function and reports (prints) how much time in seconds it took to
+    execute it.
+    """
     start = time()
-    result = f(*args, **kwargs)
+    result = function(*args, **kwargs)
     end = time()
 
-    print(f"{f.__name__} took {end - start:.2}s to execute.")
+    print(f"{function.__name__} took {end - start:.2}s to execute.")
     return result

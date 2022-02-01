@@ -3,6 +3,7 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Any, Callable
 
+from .cache import CacheState
 from .process import all_from, IdRange
 
 
@@ -24,19 +25,10 @@ def download_from_json(
 
     results = Path("results")
 
-    def cache(data):
-        # with open(results / "cache-valid.json", "w+") as f:
-        #     valids = json.load(f)
-        #     valids[data[]]
-
+    def cache(data, state: CacheState):
+        print(f'Saving "{data}" to cache with state {state}.')
         with jsonlines.open(results / "cache.jsonl", mode="a") as sink_f:
             sink_f.write(data)  # type: ignore
-
-    def is_invalid_process(data):
-        return data in (
-            ["Número do processo inválido."],
-            ["O processo informado não foi encontrado."],
-        )
 
     async def fetch_process(session: aiohttp.ClientSession, id_: str):
         async with session.post(
@@ -48,15 +40,22 @@ def download_from_json(
         ) as response:
             data = json.loads(await response.text())
 
-        if is_invalid_process(data):
-            # print(f"{id_}: Invalid/Not Found")
-            return
+        print(data)
+
+        match data:
+            case ["O processo informado não foi encontrado."]:
+                print(f"{id_}: Not found -- Cached now")
+                cache({"invalido": id_}, state=CacheState.INVALID)
+                return
+            case ["Número do processo inválido."]:
+                print(f"{id_}: Invalid -- Cached now")
+                cache({"invalido": id_}, state=CacheState.INVALID)
+                return
 
         if not filter_function(data):
-            cache(data)
-            print(
-                f"{id_}: Filtered  -- ({data.get('txtAssunto', 'Sem Assunto')}) -- Cached"
-            )
+            cache(data, state=CacheState.CACHED)
+            subject = data.get("txtAssunto", "Sem Assunto")
+            print(f"{id_}: Filtered  -- ({subject}) -- Cached now")
             return "Filtered"
 
         fields = data.keys() if fetch_all else ["idProc", "codProc"]
@@ -76,7 +75,9 @@ def download_from_json(
                 end = min(start + step, len(ids))
                 sub_ids = ids[start:end]
                 print(
-                    f"\n--\n-- Wave: {(start // step) + 1}\n    ({sub_ids[0]}..{sub_ids[-1]})"
+                    "\n--"
+                    f"\n-- Wave: {(start // step) + 1}"
+                    f"\n    ({sub_ids[0]}..{sub_ids[-1]})"
                 )
                 requests = (fetch_process(session, id_) for id_ in sub_ids)
                 data = await asyncio.gather(
@@ -88,11 +89,14 @@ def download_from_json(
                     1 if item != "Filtered" else 0 for item in data if item is not None
                 )
                 invalid = sum(1 if item is None else 0 for item in data)
+
                 data = [
                     item for item in data if item is not None and item != "Filtered"
                 ]
+
                 with jsonlines.open(sink, mode="a") as sink_f:
                     sink_f.write_all(data)  # type: ignore
+
                 print(
                     f"Partial result: {data} ({filtered} filtered, {invalid} invalid)"
                 )
@@ -101,9 +105,9 @@ def download_from_json(
         print(
             f"""
             Finished.
-                Ellapsed time:      {ellapsed:.2}s
+                Ellapsed time:      {ellapsed:.2f}s
                 Request count:      {total}
-                Time/Request (avg): {ellapsed / total:.2}s
+                Time/Request (avg): {ellapsed / total:.2f}s
         """
         )
 
@@ -162,7 +166,7 @@ def processes_by_subject(
 ):
     """Search for processes that contain the given words on its subject."""
     from .cache import filter_cached
-    from .timing import timeit
+    from .timing import report_time
 
     def has_word_in_subject(data: dict[str, Any]):
         return any(
@@ -172,14 +176,16 @@ def processes_by_subject(
 
     print(f"Filtering by: {words}")
 
-    all_from_range = all_from(id_range)
-    ids = timeit(filter_cached, all_from_range, cache_file=cache_file)
+    all_from_range = set(all_from(id_range))
+    ids = report_time(filter_cached, all_from_range, cache_file=cache_file)
+    for filtered_id in set(all_from_range) - set(ids):
+        print(f"Ignoring {filtered_id} -- Cached")
 
     # print(f"{ids=}")
 
-    # download_all_from_range(
-    #     ids,
-    #     output,
-    #     filter_function=has_word_in_subject,
-    #     download_function=download_function,
-    # )
+    download_all_from_range(
+        ids,
+        output,
+        filter_function=has_word_in_subject,
+        download_function=download_function,
+    )

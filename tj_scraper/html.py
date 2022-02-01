@@ -91,7 +91,9 @@ class TJRJSpider(Spider):
         print(kwargs)
         process_id, page_content = extract_page_content(response)
 
-        yield Process(process_id, "RJ", page_content.replace("\n", ""))
+        yield Process(
+            process_id, "RJ", page_content.replace("\n", ""), lawyers=[], extras=[]
+        )
 
 
 def run_spider(spider, **kwargs):

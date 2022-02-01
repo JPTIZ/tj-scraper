@@ -22,13 +22,13 @@ def make_app():
     @app.command()
     def cache():
         """Operações relacionadas à cache."""
-        pass
 
     @cache_cmd.command()
     def info(
         cache_file: Path = Path("results") / "cache.jsonl",
     ):
-        with open(cache_file) as cache:
+        i = 0
+        with open(cache_file, encoding="utf-8") as cache:
             for i, _ in enumerate(cache.readlines(), start=1):
                 pass
         print(f"Cache file has a total of {i} entries")
@@ -40,6 +40,15 @@ def make_app():
         from .cache import dedup_cache
 
         dedup_cache(cache_file)
+
+    @cache_cmd.command()
+    def create_metadata(
+        cache_file: Path = Path("results") / "cache.jsonl",
+        output: Optional[Path] = None,
+    ):
+        from .cache import create_metadata
+
+        create_metadata(cache_file, output)
 
     app.add_typer(cache_cmd, name="cache")
 
