@@ -13,7 +13,17 @@ ProcessField = Union[str, list[Object]]
 Process = dict[str, ProcessField]
 
 
-def flatten(process: dict[str, Union[str, list[Object]]]) -> dict[str, str]:
+def select_fields(
+    processes: Collection[Process], fields: Collection[str]
+) -> Collection[Process]:
+    """
+    Returns a new collection of process containing only fields described in
+    `fields.`
+    """
+    return [{k: v for k, v in process.items() if k in fields} for process in processes]
+
+
+def flatten(process: Process) -> dict[str, str]:
     """Normalizes a process info from JSON to a simple string -> string mapping."""
     # Info that is not in input
     result = {
@@ -42,10 +52,11 @@ def flatten(process: dict[str, Union[str, list[Object]]]) -> dict[str, str]:
         result["AudienciaDescrição"] = str(audiencia["descr"])
         result["AudienciaCódigoResultado"] = str(audiencia["codResultAud"])
 
-    divida: list[Object]
-    for i, divida in enumerate(process.pop("dividaAtivas"), start=1):  # type: ignore
-        result[f"DividaAtiva{i}AnoExerc"] = str(divida.pop("anoExerc"))  # type: ignore
-        assert not divida
+    if "dividaAtivas" in process:
+        divida: list[Object]
+        for i, divida in enumerate(process.pop("dividaAtivas"), start=1):  # type: ignore
+            result[f"DividaAtiva{i}AnoExerc"] = str(divida.pop("anoExerc"))  # type: ignore
+            assert not divida
 
     if "mandado" in process:
         mandado: Object
@@ -61,30 +72,19 @@ def flatten(process: dict[str, Union[str, list[Object]]]) -> dict[str, str]:
         personagem: Object
         for personagem in process.pop("personagens"):  # type: ignore
             info = {
-                "Código": personagem["codPers"],
+                # "Código": personagem["codPers"],
                 "Nome": personagem["nome"],
-                "TipoPolo": personagem["tipoPolo"],
+                # "TipoPolo": personagem["tipoPolo"],
             }
             category = personagem["descPers"]
             for field, value in info.items():
                 result[f"{category}{field}"] = value
 
     ultimo_movimento: Object = process.pop("ultMovimentoProc")  # type: ignore
-    result["UltimoMovimentoCodTipAud"] = str(ultimo_movimento.pop("codTipAnd"))
-    result["UltimoMovimentoOrdem"] = str(ultimo_movimento.pop("ordem"))
     result["UltimoMovimentoDataAlt"] = str(ultimo_movimento.get("dtAlt", ""))
-    result["UltimoMovimentoDescricao"] = str(ultimo_movimento.get("descricao", ""))
-    result["UltimoMovimentoCodTipMov"] = str(ultimo_movimento.get("codTipMov", ""))
     result["UltimoMovimentoDescricaoMov"] = str(ultimo_movimento.pop("descrMov"))
     result["UltimoMovimentoDataMov"] = str(ultimo_movimento.pop("dtMovimento"))
-    result["UltimoMovimentoMovimentosExibicao"] = str(
-        ultimo_movimento.pop("movimentosExibicao")
-    )
-    result["UltimoMovimentoNomeJuiz"] = str(ultimo_movimento.get("nomeJuiz", ""))
     result["UltimoMovimentoData"] = str(ultimo_movimento.get("dt", ""))
-    result["UltimoMovimentoIndPublicado"] = str(
-        ultimo_movimento.get("indPublicado", "")
-    )
     print("=" * 80)
 
     result |= {f"{k[0].upper()}{k[1:]}": str(v) for k, v in process.items()}
@@ -151,6 +151,20 @@ def prepare_to_export(data: Collection[Process]) -> list[Object]:
 def export_to_xlsx(raw_data: Collection[Process], path: Path) -> None:
     """Exports data into a XLSX file."""
     # data = prepare_to_export(raw_data)
+    raw_data = select_fields(
+        raw_data,
+        [
+            "advogados",
+            "cidade",
+            "codCnj",
+            "dataDis",
+            "idProc",
+            "personagens",
+            "txtAssunto",
+            "uf",
+            "ultMovimentoProc",
+        ],
+    )
     data = [flatten(item) for item in raw_data]
 
     book = openpyxl.Workbook()
