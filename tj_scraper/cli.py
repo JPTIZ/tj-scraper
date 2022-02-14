@@ -3,7 +3,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from typer import Argument, Option, Typer
+from typer import Argument, Exit, Option, Typer
 
 from .download import (
     download_from_html,
@@ -136,5 +136,24 @@ def make_app():
             subjects or [],
             download_function=download_function,  # type: ignore
         )
+
+    @app.command()
+    def webapp() -> None:
+        try:
+            from tj_scraper.webapp import make_webapp
+        except ImportError as error:
+            from textwrap import dedent
+
+            print(
+                dedent(
+                    f"""
+                        Failed to import webapp. Is flask installed?
+                        - Error message: {error}
+                    """
+                )
+            )
+            raise Exit(1) from error
+
+        make_webapp().run()
 
     return app
