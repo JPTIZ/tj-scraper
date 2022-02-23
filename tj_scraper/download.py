@@ -14,7 +14,7 @@ DownloadFunction = Callable[[list[str], Path, bool, FilterFunction], None]
 def download_from_json(
     ids: list[str],
     sink: Path,
-    fetch_all: bool = True,
+    fetch_all_fields: bool = True,
     filter_function: FilterFunction = lambda _: True,
 ):
     """Downloads data from urls that return JSON values."""
@@ -58,7 +58,7 @@ def download_from_json(
             print(f"{id_}: Filtered  -- ({subject}) -- Cached now")
             return "Filtered"
 
-        fields = data.keys() if fetch_all else ["idProc", "codProc"]
+        fields = data.keys() if fetch_all_fields else ["idProc", "codProc"]
 
         data = {k: v for k, v in data.items() if k in fields}
         print(f"{id_}: {data.get('txtAssunto', 'Sem Assunto')}")
@@ -70,6 +70,7 @@ def download_from_json(
         step = 100
         start_time = time()
         total = 0
+        ids = list(ids)
         async with aiohttp.ClientSession() as session:
             for start in range(0, len(ids), step):
                 end = min(start + step, len(ids))
@@ -143,10 +144,10 @@ def download_from_html(
     )
 
 
-def download_all_from_range(
+def download_all_with_ids(
     ids: list[str],
     sink: Path,
-    fetch_all: bool = True,
+    fetch_all_fields: bool = True,
     filter_function: FilterFunction = lambda _: True,
     download_function: DownloadFunction = download_from_json,
 ):
@@ -154,7 +155,23 @@ def download_all_from_range(
     Downloads relevant info from all valid process with ID in `ids` and saves
     it into `sink`. Expects `sink` to be in JSONLines format.
     """
-    download_function(ids, sink, fetch_all, filter_function)
+    download_function(ids, sink, fetch_all_fields, filter_function)
+
+
+def download_all_from_range(
+    id_range: IdRange,
+    sink: Path,
+    fetch_all_fields: bool = True,
+    filter_function: FilterFunction = lambda _: True,
+    download_function: DownloadFunction = download_from_json,
+):
+    """
+    Downloads relevant info from all valid process whose ID is within
+    `id_range` and saves it into `sink`. Expects `sink` to be in JSONLines
+    format.
+    """
+    ids = all_from(id_range)
+    download_function(ids, sink, fetch_all_fields, filter_function)
 
 
 def processes_by_subject(
@@ -181,9 +198,7 @@ def processes_by_subject(
     for filtered_id in set(all_from_range) - set(ids):
         print(f"Ignoring {filtered_id} -- Cached")
 
-    # print(f"{ids=}")
-
-    download_all_from_range(
+    download_all_with_ids(
         ids,
         output,
         filter_function=has_word_in_subject,
