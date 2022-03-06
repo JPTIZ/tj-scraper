@@ -5,6 +5,10 @@ from pathlib import Path
 from typing import Optional
 
 import jsonlines
+import toml
+
+
+from .process import has_words_in_subject, Process
 
 
 class CacheState(Enum):
@@ -43,8 +47,6 @@ def create_metadata(cache_file: Path, output: Optional[Path]):
     Creates a separated cache file that only contains IDs and if they're valid
     and/or stored.
     """
-    import toml
-
     states = {}
     with jsonlines.open(cache_file, "r") as reader:
         for item in reader:
@@ -68,7 +70,7 @@ def create_metadata(cache_file: Path, output: Optional[Path]):
             toml.dumps(
                 {
                     "meta": {
-                        "describes": metadata.describes,
+                        "describes": metadata.describes.as_posix(),
                     },
                     "states": {
                         cached_id: state.name for cached_id, state in states.items()
@@ -100,10 +102,11 @@ def dedup_cache(cache_file: Path):
     print(f"Removed {old_size - new_size} duplicates")
 
 
-def filter_cached(ids: list[str], cache_file: Path) -> list[str]:
-    """Filters IDs that are already cached."""
-    import toml
-
+def filter_cached(ids: list[str], cache_file: Path) -> tuple[list[str], list[str]]:
+    """
+    Filters IDs that are already cached. Returns a tuple with uncached and
+    cached ids, respectively.
+    """
     filtered = []
     ids = [*ids]
     cached_ids = set()
@@ -120,4 +123,26 @@ def filter_cached(ids: list[str], cache_file: Path) -> list[str]:
 
     filtered = set(ids) - cached_ids
 
-    return list(filtered)
+    return list(filtered), list(cached_ids)
+
+
+def restore(
+    cache_file: Path,
+    exclude_ids: Optional[list[str]] = None,
+    with_subject: Optional[list[str]] = None,
+) -> list[Process]:
+    """
+    Loads cached data of given IDs.
+    """
+    exclude_ids = exclude_ids or []
+    with_subject = with_subject or []
+
+    with jsonlines.open(cache_file) as cache_f:
+        data = [
+            item
+            for item in cache_f
+            if item.get("codProc") not in exclude_ids
+            and has_words_in_subject(item, with_subject)
+        ]
+
+    return data
