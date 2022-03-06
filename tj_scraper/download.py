@@ -3,8 +3,8 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Any, Callable
 
-from .cache import CacheState
-from .process import all_from, IdRange
+from .cache import restore, CacheState
+from .process import all_from, has_words_in_subject, IdRange
 
 
 FilterFunction = Callable[[dict[str, Any]], bool]
@@ -185,22 +185,27 @@ def processes_by_subject(
     from .cache import filter_cached
     from .timing import report_time
 
-    def has_word_in_subject(data: dict[str, Any]):
-        return any(
-            word.lower() in data.get("txtAssunto", "Sem Assunto").lower()
-            for word in words
-        )
-
     print(f"Filtering by: {words}")
 
     all_from_range = set(all_from(id_range))
-    ids = report_time(filter_cached, all_from_range, cache_file=cache_file)
+    ids, cached_ids = report_time(filter_cached, all_from_range, cache_file=cache_file)
+    cached_processes = [
+        item
+        for item in restore(cache_file)
+        if item["codProc"] in cached_ids and has_words_in_subject(item, words)
+    ]
+
+    import jsonlines
+
+    with jsonlines.open(output, "w") as output_f:
+        output_f.write_all(cached_processes)
+
     for filtered_id in set(all_from_range) - set(ids):
         print(f"Ignoring {filtered_id} -- Cached")
 
     download_all_with_ids(
         ids,
         output,
-        filter_function=has_word_in_subject,
+        filter_function=lambda item: has_words_in_subject(item, words),
         download_function=download_function,
     )

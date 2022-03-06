@@ -1,20 +1,14 @@
 """Related to a TJ's juridical process."""
-from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 
 IdRange = Union[tuple[str, str], str]
 
 
-@dataclass
-class Process:
-    """The information we want from a single process from a TJ."""
-
-    process_id: str
-    uf: str  # pylint: disable=invalid-name
-    subject: str
-    lawyers: list[str]
-    extras: list[dict[str, str]]
+Value = str
+Object = dict[str, str]
+ProcessField = Union[str, list[Object]]
+Process = dict[str, ProcessField]
 
 
 def id_or_range(process_id: str) -> IdRange:
@@ -72,3 +66,11 @@ def all_from(range_: IdRange):
     while (start_ := next_((start, end))) is not None:
         start = start_
         yield start
+
+
+def has_words_in_subject(data: dict[str, Any], words: list[str]):
+    """Checks if data's subject field contains any of certains words."""
+    assunto = data.get("txtAssunto", "Sem Assunto").lower()
+    has = any(word.lower() in assunto for word in words)
+    print(f"{has} for {words} in {assunto}")
+    return has

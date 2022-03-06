@@ -1,15 +1,10 @@
 """Deals with export formats."""
 from collections.abc import Collection
 from pathlib import Path
-from typing import Union
 
 import openpyxl
 
-
-Value = str
-Object = dict[str, str]
-ProcessField = Union[str, list[Object]]
-Process = dict[str, ProcessField]
+from .process import Object, Process
 
 
 def select_fields(
@@ -30,9 +25,12 @@ def flatten(process: Process) -> dict[str, str]:
     }
 
     # Relevant and already flat fields
+    print(process)
+    if not process:
+        return {}
     result |= {
         "ID do Processo": str(process.pop("idProc")),
-        "Assunto": str(process.pop("txtAssunto")),
+        "Assunto": str(process.get("txtAssunto", "Sem Assunto")),
     }
     print(f"Flattening {result['ID do Processo']}")
 
@@ -73,10 +71,10 @@ def flatten(process: Process) -> dict[str, str]:
             for field, value in info.items():
                 result[f"{category}{field}"] = value
 
-    ultimo_movimento: Object = process.pop("ultMovimentoProc")  # type: ignore
+    ultimo_movimento: Object = process.get("ultMovimentoProc", {})  # type: ignore
     result["UltimoMovimentoDataAlt"] = str(ultimo_movimento.get("dtAlt", ""))
-    result["UltimoMovimentoDescricaoMov"] = str(ultimo_movimento.pop("descrMov"))
-    result["UltimoMovimentoDataMov"] = str(ultimo_movimento.pop("dtMovimento"))
+    result["UltimoMovimentoDescricaoMov"] = str(ultimo_movimento.get("descrMov", ""))
+    result["UltimoMovimentoDataMov"] = str(ultimo_movimento.get("dtMovimento", ""))
     result["UltimoMovimentoData"] = str(ultimo_movimento.get("dt", ""))
     print("=" * 80)
 
@@ -93,6 +91,7 @@ def prepare_to_export(raw_data: Collection[Process]) -> list[Object]:
             "advogados",
             "cidade",
             "codCnj",
+            "codProc",
             "dataDis",
             "idProc",
             "personagens",
@@ -101,7 +100,8 @@ def prepare_to_export(raw_data: Collection[Process]) -> list[Object]:
             "ultMovimentoProc",
         ],
     )
-    return [flatten(item) for item in raw_data]
+    data = [flatten(item) for item in raw_data]
+    return [item for item in data if item]
 
 
 def export_to_xlsx(raw_data: Collection[Process], path: Path) -> None:

@@ -42,6 +42,14 @@ def make_app():
         dedup_cache(cache_file)
 
     @cache_cmd.command()
+    def restore(
+        cache_file: Path = Path("results") / "cache.jsonl",
+    ):
+        from .cache import restore
+
+        print(restore([], cache_file))
+
+    @cache_cmd.command()
     def create_metadata(
         cache_file: Path = Path("results") / "cache.jsonl",
         output: Optional[Path] = None,
