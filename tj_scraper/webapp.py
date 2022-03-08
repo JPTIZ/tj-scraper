@@ -91,7 +91,8 @@ def make_webapp():
             case "json":
                 return jsonify(data), 200
             case "xlsx":
-                filename = f"Processos-TJ-{start}-{end}-Todos.xlsx"
+                suffix = "_".join(subject.split())
+                filename = f"Processos-TJ-{start}-{end}-{suffix}.xlsx"
                 with NamedTemporaryFile() as xlsx_file:
                     from tj_scraper.export import export_to_xlsx
 
