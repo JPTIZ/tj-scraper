@@ -88,11 +88,16 @@ class TJRJSpider(Spider):
     start_urls = [build_process_url("2007.001.209836-2")]
 
     def parse(self, response: Response, **kwargs):
-        print(kwargs)
         process_id, page_content = extract_page_content(response)
 
         yield Process(
-            process_id, "RJ", page_content.replace("\n", ""), lawyers=[], extras=[]
+            {
+                "process_id": process_id,
+                "uf": "RJ",
+                "subject": page_content.replace("\n", ""),
+                "lawyers": [],
+                "extras": [],
+            }
         )
 
 

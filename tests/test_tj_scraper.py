@@ -4,7 +4,7 @@ from pathlib import Path
 import jsonlines
 import pytest
 
-from tj_scraper import (
+from tj_scraper.html import (
     run_spider,
     TJRJSpider,
 )
@@ -17,7 +17,7 @@ class LocalTJRJSpider(TJRJSpider):
     """
 
     start_urls = [
-        f"file://{Path.cwd() / 'samples' / 'invalid-numProcesso.html'}",
+        f"file://{(Path.cwd() / 'samples' / 'invalid-numProcesso.html').resolve()}",
     ]
 
 
