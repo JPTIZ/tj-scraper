@@ -16,18 +16,18 @@ jobs:
       - name: Install poetry
         run: pip install --user poetry
       - name: Install dependencies
-        run: poetry install
+        run: poetry install -E webapp
       - name: Mypy
         if: always()
         run: poetry run mypy --ignore-missing-imports .
       - name: Black
         if: always()
-        run: poetry run black --check --diff .
+        run: poetry run black --check --diff . --target-version py310
       - name: Pylint
         if: always()
         run: |
           poetry run pylint tj_scraper
           poetry run pylint tests
-          # - name: Tests
-          #   if: always()
-          #   run: poetry run pytest
+      - name: Tests
+        if: always()
+        run: poetry run pytest
