@@ -31,4 +31,4 @@ jobs:
           poetry run pylint tests
       - name: Tests
         if: always()
-        run: poetry run pytest
+        run: poetry run pytest -vvv
