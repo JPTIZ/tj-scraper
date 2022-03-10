@@ -94,7 +94,7 @@ class TJRJSpider(Spider):
             {
                 "process_id": process_id,
                 "uf": "RJ",
-                "subject": page_content.replace("\n", ""),
+                "subject": page_content.replace("\n", " "),
                 "lawyers": [],
                 "extras": [],
             }
