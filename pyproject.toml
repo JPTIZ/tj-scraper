@@ -17,7 +17,7 @@ toml = "^0.10.2"
 Flask = {version = "^2.0.2", optional = true}
 
 [tool.poetry.dev-dependencies]
-pytest = "^5.2"
+pytest = "^7.0.1"
 pylint = "^2.7.2"
 flake8 = "^3.8.4"
 pre-commit = "^2.14.0"
