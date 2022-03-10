@@ -62,7 +62,7 @@ def test_fetch_subject_from_a_process_page(items_sink, crawler_settings):
     assert data[0]["subject"] == (
         "Crimes de Tortura (Art. 1º - Lei 9.455/97)"
         " E Prevaricação (Art. 319 e 319-A - CP)"
-        " E Usurpação de função pública  (Art. 328 - CP)"
+        " E Usurpação de função pública (Art. 328 - CP)"
     )
 
 
