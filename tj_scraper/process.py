@@ -14,6 +14,12 @@ Process = dict[str, ProcessField]
 def id_or_range(process_id: str) -> IdRange:
     """Evaluates a "<start>..<end>" or a "<process id>" string."""
     start, *end = process_id.split("..")
+
+    if len(end) > 1:
+        raise ValueError(
+            f'Invalid range format. Expected just one "..", got "{process_id}".'
+        )
+
     if end:
         return start, end[0]
     return start
@@ -61,6 +67,9 @@ def all_from(range_: IdRange):
 
     assert not isinstance(range_, str)
     start, end = range_
+    assert int("".join(to_parts(start))) <= int(
+        "".join(to_parts(end))
+    ), "End should be higher than start."
     yield start
 
     while (start_ := next_((start, end))) is not None:
