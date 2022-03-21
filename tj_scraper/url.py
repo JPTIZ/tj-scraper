@@ -3,6 +3,17 @@
 
 def build_url(page: str, params: dict[str, str]):
     """Builds URL with correct query string. For API purposes."""
+    page, *query_strings = page.split("?", maxsplit=1)
+    query_string = query_strings[0] if query_strings else ""
+
+    params = (
+        dict(
+            param_string.split("=", maxsplit=1)
+            for param_string in query_string.split("&")
+            if param_string
+        )
+        | params
+    )
     query_string = "&".join(f"{p}={v}" for p, v in params.items())
 
     return f"{page}?{query_string}"
