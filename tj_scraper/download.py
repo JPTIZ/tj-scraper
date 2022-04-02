@@ -10,12 +10,20 @@ from .process import all_from, has_words_in_subject, IdRange
 FilterFunction = Callable[[dict[str, Any]], bool]
 DownloadFunction = Callable[[list[str], Path, bool, FilterFunction], None]
 
+BASE_URLS = {
+    "rj": (
+        "https://www3.tjrj.jus.br/consultaprocessual/api/processos/por-numero/publica"
+    ),
+}
+
 
 def download_from_json(
     ids: list[str],
     sink: Path,
     fetch_all_fields: bool = True,
     filter_function: FilterFunction = lambda _: True,
+    # pylint: disable=dangerous-default-value
+    base_urls: dict[str, str] = BASE_URLS,
 ):
     """Downloads data from urls that return JSON values."""
     import aiohttp
@@ -30,9 +38,10 @@ def download_from_json(
         with jsonlines.open(results / "cache.jsonl", mode="a") as sink_f:
             sink_f.write(data)  # type: ignore
 
-    async def fetch_process(session: aiohttp.ClientSession, id_: str):
+    # pylint: disable=invalid-name
+    async def fetch_process(session: aiohttp.ClientSession, id_: str, uf: str):
         async with session.post(
-            base_url,
+            base_urls[uf],
             json={
                 "tipoProcesso": "1",
                 "codigoProcesso": id_,
@@ -71,7 +80,7 @@ def download_from_json(
         start_time = time()
         total = 0
         ids = list(ids)
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(trust_env=True) as session:
             for start in range(0, len(ids), step):
                 end = min(start + step, len(ids))
                 sub_ids = ids[start:end]
@@ -80,7 +89,7 @@ def download_from_json(
                     f"\n-- Wave: {(start // step) + 1}"
                     f"\n    ({sub_ids[0]}..{sub_ids[-1]})"
                 )
-                requests = (fetch_process(session, id_) for id_ in sub_ids)
+                requests = (fetch_process(session, id_, "rj") for id_ in sub_ids)
                 data = await asyncio.gather(
                     *requests,
                 )
@@ -111,10 +120,6 @@ def download_from_json(
                 Time/Request (avg): {ellapsed / total:.2f}s
         """
         )
-
-    base_url = (
-        "https://www3.tjrj.jus.br/consultaprocessual/api/processos/por-numero/publica"
-    )
 
     asyncio.run(fetch_all_processes(ids))
 

@@ -24,6 +24,7 @@ pre-commit = "^2.14.0"
 mypy = "^0.931"
 black = "21.12b0"
 types-requests = "^2.25.11"
+aioresponses = "^0.7.3"
 
 [tool.poetry.extras]
 webapp = ["flask"]
@@ -36,6 +37,7 @@ max-line-length = 88
 disable = [
     "import-outside-toplevel",
     "line-too-long",
+    "duplicate-code",
 ]
 
 [tool.pylint.typecheck]
