@@ -21,10 +21,11 @@ pytest = "^7.0.1"
 pylint = "^2.7.2"
 flake8 = "^3.8.4"
 pre-commit = "^2.14.0"
-mypy = "^0.931"
+mypy = "^0.942"
 black = "21.12b0"
 types-requests = "^2.25.11"
 aioresponses = "^0.7.3"
+types-toml = "^0.10.4"
 
 [tool.poetry.extras]
 webapp = ["flask"]

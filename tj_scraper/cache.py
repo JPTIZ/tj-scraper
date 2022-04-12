@@ -107,7 +107,7 @@ def filter_cached(ids: list[str], cache_file: Path) -> tuple[list[str], list[str
     Filters IDs that are already cached. Returns a tuple with uncached and
     cached ids, respectively.
     """
-    filtered = []
+    filtered: list[str] = []
     ids = [*ids]
     cached_ids = set()
     with open(
@@ -121,9 +121,9 @@ def filter_cached(ids: list[str], cache_file: Path) -> tuple[list[str], list[str
         if state == CacheState.CACHED.name
     }
 
-    filtered = set(ids) - cached_ids
+    filtered = list(set(ids) - cached_ids)
 
-    return list(filtered), list(cached_ids)
+    return filtered, list(cached_ids)
 
 
 def restore(

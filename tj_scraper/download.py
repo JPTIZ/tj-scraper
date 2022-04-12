@@ -196,7 +196,7 @@ def processes_by_subject(
     cached_processes = [
         item
         for item in restore(cache_file)
-        if item["codProc"] in cached_ids and has_words_in_subject(item, words)
+        if item["codProc"] in cached_ids and has_words_in_subject(item, list(words))
     ]
 
     import jsonlines
@@ -210,6 +210,6 @@ def processes_by_subject(
     download_all_with_ids(
         ids,
         output,
-        filter_function=lambda item: has_words_in_subject(item, words),
+        filter_function=lambda item: has_words_in_subject(item, list(words)),
         download_function=download_function,
     )
