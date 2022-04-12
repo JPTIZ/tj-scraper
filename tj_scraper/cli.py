@@ -47,7 +47,7 @@ def make_app():
     ):
         from .cache import restore
 
-        print(restore([], cache_file))
+        print(restore(cache_file, []))
 
     @cache_cmd.command()
     def create_metadata(
@@ -93,7 +93,7 @@ def make_app():
             "--assuntos",
             help=(
                 "Filtrar por determinadas palavras que aparecerem no assunto"
-                " dos processos",
+                " dos processos"
             ),
         ),
     ) -> None:

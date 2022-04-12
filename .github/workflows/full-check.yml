@@ -19,8 +19,7 @@ jobs:
         run: poetry install -E webapp
       - name: Mypy
         if: always()
-        # Waiting for mypy 0.940 release (because of `match` statement)
-        run: poetry run mypy --ignore-missing-imports . || echo "Mypy failed"
+        run: poetry run mypy --ignore-missing-imports .
       - name: Black
         if: always()
         run: poetry run black --check --diff . --target-version py310
