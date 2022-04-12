@@ -61,7 +61,7 @@ def results_sink():
     sink.unlink(missing_ok=True)
 
 
-def retrieve_data(results_sink):
+def retrieve_data(results_sink) -> list[dict[str, str]]:
     """Retrieves data collected stored in sink."""
     import jsonlines
 
@@ -160,6 +160,7 @@ def test_download_with_subject_filter_one_word(local_tj, results_sink):
 
     expected = {k: v for k, v in MOCK_DB.items() if has_words_in_subject(v, ["furto"])}
     ids = list(expected.keys())
+    expected_values = sorted(expected.values(), key=lambda d: d["idProc"])
 
     for id_ in ids:
         local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
@@ -168,7 +169,7 @@ def test_download_with_subject_filter_one_word(local_tj, results_sink):
 
     data = retrieve_data(results_sink)
 
-    assert data == expected
+    assert data == expected_values
 
 
 def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
@@ -184,6 +185,7 @@ def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
         if has_words_in_subject(v, ["furto", "receptação"])
     }
     ids = list(expected.keys())
+    expected_values = sorted(expected.values(), key=lambda d: d["idProc"])
 
     for id_ in ids:
         local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
@@ -192,4 +194,4 @@ def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
 
     data = retrieve_data(results_sink)
 
-    assert data == expected
+    assert data == expected_values

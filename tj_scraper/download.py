@@ -49,8 +49,6 @@ def download_from_json(
         ) as response:
             data = json.loads(await response.text())
 
-        print(data)
-
         match data:
             case ["O processo informado não foi encontrado."]:
                 print(f"{id_}: Not found -- Cached now")
