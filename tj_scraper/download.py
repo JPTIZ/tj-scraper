@@ -68,13 +68,12 @@ def download_from_json(
         fields = data.keys() if fetch_all_fields else ["idProc", "codProc"]
 
         data = {k: v for k, v in data.items() if k in fields}
-        print(f"{id_}: {data.get('txtAssunto', 'Sem Assunto')}")
+        print(f"Fetched process {id_}: {data.get('txtAssunto', 'Sem Assunto')}")
         return data
 
     from time import time
 
-    async def fetch_all_processes(ids):
-        step = 100
+    async def fetch_all_processes(ids, step=100):
         start_time = time()
         total = 0
         ids = list(ids)
@@ -104,6 +103,8 @@ def download_from_json(
 
                 with jsonlines.open(sink, mode="a") as sink_f:
                     sink_f.write_all(data)  # type: ignore
+
+                data = [item["idProc"] for item in data]
 
                 print(
                     f"Partial result: {data} ({filtered} filtered, {invalid} invalid)"
