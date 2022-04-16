@@ -3,6 +3,8 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Any, Callable
 
+import jsonlines
+
 from .cache import restore, CacheState
 from .process import all_from, has_words_in_subject, IdRange
 
@@ -28,7 +30,6 @@ def download_from_json(
     """Downloads data from urls that return JSON values."""
     import aiohttp
     import asyncio
-    import jsonlines
     import json
 
     results = Path("results")
@@ -198,8 +199,6 @@ def processes_by_subject(
         for item in restore(cache_file)
         if item["codProc"] in cached_ids and has_words_in_subject(item, list(words))
     ]
-
-    import jsonlines
 
     with jsonlines.open(output, "w") as output_f:
         output_f.write_all(cached_processes)

@@ -42,6 +42,11 @@ def sort(cache_file: Path):
     raise NotImplementedError(f"Should sort {cache_file}")
 
 
+def metadata_path(cache_file: Path) -> Path:
+    """Retrieves path for cache-file's metadata."""
+    return cache_file.with_name(f"{cache_file.stem}-meta.toml")
+
+
 def create_metadata(cache_file: Path, output: Optional[Path]):
     """
     Creates a separated cache file that only contains IDs and if they're valid
@@ -63,7 +68,7 @@ def create_metadata(cache_file: Path, output: Optional[Path]):
     )
 
     if not output:
-        output = cache_file.with_name(f"{cache_file.stem}-meta.toml")
+        output = metadata_path(cache_file)
 
     with open(output, "w", encoding="utf-8") as file_:
         file_.write(
@@ -78,6 +83,19 @@ def create_metadata(cache_file: Path, output: Optional[Path]):
                 }
             )
         )
+
+
+def load_metadata(cache_file: Path) -> CacheMetadata:
+    """Returns an object containing a cache-file's metadata."""
+    with open(
+        cache_file.with_name(f"{cache_file.stem}-meta.toml"), encoding="utf-8"
+    ) as reader:
+        cache = toml.load(reader)
+
+    return CacheMetadata(
+        describes=cache["describes"],
+        states={k: CacheState(v) for k, v in cache["states"].items()},
+    )
 
 
 def dedup_cache(cache_file: Path):
@@ -110,14 +128,11 @@ def filter_cached(ids: list[str], cache_file: Path) -> tuple[list[str], list[str
     filtered: list[str] = []
     ids = [*ids]
     cached_ids = set()
-    with open(
-        cache_file.with_name(f"{cache_file.stem}-meta.toml"), encoding="utf-8"
-    ) as reader:
-        cache = toml.load(reader)
+    cache = load_metadata(cache_file)
 
     cached_ids = {
         cached_id
-        for cached_id, state in cache["states"].items()
+        for cached_id, state in cache.states.items()
         if state == CacheState.CACHED.name
     }
 
