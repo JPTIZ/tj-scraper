@@ -1,6 +1,6 @@
 """Deals with cache-related features."""
 from dataclasses import dataclass
-from enum import auto, Enum
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
@@ -21,10 +21,10 @@ class CacheState(Enum):
     NOT_CACHED: There's no cache information for given data.
     """
 
-    CACHED = auto()
-    OUTDATED = auto()
-    INVALID = auto()
-    NOT_CACHED = auto()
+    CACHED = "CACHED"
+    OUTDATED = "OUTDATED"
+    INVALID = "INVALID"
+    NOT_CACHED = "NOT_CACHED"
 
 
 @dataclass
@@ -93,7 +93,7 @@ def load_metadata(cache_file: Path) -> CacheMetadata:
         cache = toml.load(reader)
 
     return CacheMetadata(
-        describes=cache["describes"],
+        describes=cache["meta"]["describes"],
         states={k: CacheState(v) for k, v in cache["states"].items()},
     )
 
@@ -120,12 +120,11 @@ def dedup_cache(cache_file: Path):
     print(f"Removed {old_size - new_size} duplicates")
 
 
-def filter_cached(ids: list[str], cache_file: Path) -> tuple[list[str], list[str]]:
+def filter_cached(ids: list[str], cache_file: Path) -> tuple[set[str], set[str]]:
     """
     Filters IDs that are already cached. Returns a tuple with uncached and
     cached ids, respectively.
     """
-    filtered: list[str] = []
     ids = [*ids]
     cached_ids = set()
     cache = load_metadata(cache_file)
@@ -133,12 +132,12 @@ def filter_cached(ids: list[str], cache_file: Path) -> tuple[list[str], list[str
     cached_ids = {
         cached_id
         for cached_id, state in cache.states.items()
-        if state == CacheState.CACHED.name
+        if state == CacheState.CACHED
     }
 
-    filtered = list(set(ids) - cached_ids)
+    filtered_ids = set(ids) - cached_ids
 
-    return filtered, list(cached_ids)
+    return filtered_ids, cached_ids
 
 
 def restore(
