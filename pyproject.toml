@@ -47,6 +47,9 @@ ignored-classes = [
     "Writer",
 ]
 
+[tool.pycodestyle]
+max-line-length = 88
+
 [tool.pyright]
 ignore = ["tj_scraper/cli.py"]
 
