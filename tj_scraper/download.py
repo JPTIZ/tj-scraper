@@ -72,12 +72,8 @@ def download_from_json(
         print(f"Fetched process {id_}: {data.get('txtAssunto', 'Sem Assunto')}")
         return data
 
-    from time import time
-
     async def fetch_all_processes(ids, step=100):
-        start_time = time()
         total = 0
-        ids = list(ids)
         async with aiohttp.ClientSession(trust_env=True) as session:
             for start in range(0, len(ids), step):
                 end = min(start + step, len(ids))
@@ -105,23 +101,24 @@ def download_from_json(
                 with jsonlines.open(sink, mode="a") as sink_f:
                     sink_f.write_all(data)  # type: ignore
 
-                data = [item["idProc"] for item in data]
+                partial_ids = [item["idProc"] for item in data]
 
                 print(
-                    f"Partial result: {data} ({filtered} filtered, {invalid} invalid)"
+                    f"Partial result: {partial_ids} ({filtered} filtered, {invalid} invalid)"
                 )
-        end_time = time()
-        ellapsed = end_time - start_time
-        print(
-            f"""
-            Finished.
-                Ellapsed time:      {ellapsed:.2f}s
-                Request count:      {total}
-                Time/Request (avg): {ellapsed / total:.2f}s
-        """
-        )
+        return total
 
-    asyncio.run(fetch_all_processes(ids))
+    from tj_scraper.timing import timeit
+
+    total, ellapsed = timeit(asyncio.run, fetch_all_processes(ids))
+    print(
+        f"""
+        Finished.
+            Ellapsed time:      {ellapsed:.2f}s
+            Request count:      {total}
+            Time/Request (avg): {ellapsed / total:.2f}s
+    """
+    )
 
 
 def download_from_html(
@@ -176,7 +173,7 @@ def download_all_from_range(
     format.
     """
     ids = all_from(id_range)
-    download_function(ids, sink, fetch_all_fields, filter_function)
+    download_function(list(ids), sink, fetch_all_fields, filter_function)
 
 
 def processes_by_subject(
@@ -193,7 +190,9 @@ def processes_by_subject(
     print(f"Filtering by: {words}")
 
     all_from_range = set(all_from(id_range))
-    ids, cached_ids = report_time(filter_cached, all_from_range, cache_file=cache_file)
+    (ids, cached_ids), _ = report_time(
+        filter_cached, all_from_range, cache_file=cache_file
+    )
     cached_processes = [
         item
         for item in restore(cache_file)
@@ -201,7 +200,7 @@ def processes_by_subject(
     ]
 
     with jsonlines.open(output, "w") as output_f:
-        output_f.write_all(cached_processes)
+        output_f.write_all(cached_processes)  # type: ignore
 
     for filtered_id in set(all_from_range) - set(ids):
         print(f"Ignoring {filtered_id} -- Cached")

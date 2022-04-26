@@ -26,6 +26,7 @@ black = "21.12b0"
 types-requests = "^2.25.11"
 aioresponses = "^0.7.3"
 types-toml = "^0.10.4"
+pylint-fixme-info = "^1.0.3"
 
 [tool.poetry.extras]
 webapp = ["flask"]
@@ -33,12 +34,16 @@ webapp = ["flask"]
 [tool.mypy]
 ignore_missing_imports = true
 
+[tool.pylint.master]
+load-plugins = ["pylint_fixme_info"]
+
 [tool.pylint.messages_control]
 max-line-length = 88
 disable = [
     "import-outside-toplevel",
     "line-too-long",
     "duplicate-code",
+    "fixme",
 ]
 
 [tool.pylint.typecheck]

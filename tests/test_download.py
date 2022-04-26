@@ -32,7 +32,7 @@ def retrieve_data(results_sink) -> list[dict[str, str]]:
     import jsonlines
 
     with jsonlines.open(results_sink) as sink:
-        return list(sink)
+        return list(sink)  # type: ignore
 
 
 def flatten(list_of_lists):
@@ -68,7 +68,7 @@ def test_sanity(local_tj):
 
 def test_download_all_ids(local_tj, results_sink):
     """Tests if download functions is able to fetch all data."""
-    ids = MOCK_DB.keys()
+    ids = list(MOCK_DB.keys())
 
     for id_ in ids:
         local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
@@ -122,6 +122,7 @@ def test_download_with_subject_filter_one_word(local_tj, results_sink):
     Tests if download function is able to filter only items that contains one
     specific word on their subjects.
     """
+    # FIXME: This test actually doesn't filter subjects with `processes_with_subject`.
     from tj_scraper.process import has_words_in_subject
 
     expected = {k: v for k, v in MOCK_DB.items() if has_words_in_subject(v, ["furto"])}
