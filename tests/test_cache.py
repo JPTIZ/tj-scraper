@@ -3,14 +3,16 @@ Tests cache's low-level operations. `test_download` contains high-level
 testing.
 """
 # pylint: disable=redefined-outer-name
+from pathlib import Path
+
 import pytest
+
+from . import MOCK_DB
 
 
 @pytest.fixture()
 def cache_file():
     """A sink file for tests' collected download items."""
-    from pathlib import Path
-
     sink = Path("tests") / "test_cache.jsonl"
     yield sink
     sink.unlink(missing_ok=True)
