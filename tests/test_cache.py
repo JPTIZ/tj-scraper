@@ -7,8 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from . import MOCK_DB
-
 
 @pytest.fixture()
 def cache_file():
@@ -21,7 +19,6 @@ def cache_file():
 @pytest.fixture()
 def cache_metadata_file():
     """A sink file for tests' collected download items."""
-    from pathlib import Path
     from textwrap import dedent
 
     sink = Path("tests") / "test_cache-meta.toml"

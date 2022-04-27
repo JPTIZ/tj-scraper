@@ -2,6 +2,9 @@
 from flask import Flask, jsonify, request, send_file
 
 
+from .cache import jsonl_reader
+
+
 def make_webapp():
     """Creates the tj_scraper flask application."""
     app = Flask(__name__)
@@ -51,36 +54,44 @@ def make_webapp():
 
     @app.route("/buscar", methods=["GET"])
     def search():
+        # pylint: disable=too-many-locals
+        from pathlib import Path
         from tj_scraper.download import (
             download_all_from_range,
             download_from_json,
             processes_by_subject,
         )
 
-        start = request.args.get("intervalo_inicio")
-        end = request.args.get("intervalo_fim")
+        start_arg = request.args.get("intervalo_inicio")
+        end_arg = request.args.get("intervalo_fim")
 
-        if not (start or end):
-            return f"Wrong inputs for either start or end: {start=}, {end=}.", 400
+        if not (start_arg or end_arg):
+            return (
+                f"Wrong inputs for either start or end: {start_arg=}, {end_arg=}.",
+                400,
+            )
+
+        start = str(start_arg)
+        end = str(end_arg)
 
         from tempfile import NamedTemporaryFile
 
         with NamedTemporaryFile() as sink:
+            sink_file = Path(sink.name)
             match request.args:
                 case {"assunto": subject}:
                     processes_by_subject(
                         (start, end),
                         words=subject.split(),
                         download_function=download_from_json,
-                        output=sink.name,
+                        output=sink_file,
                     )
                 case _:
-                    download_all_from_range((start, end), sink.name)
+                    download_all_from_range((start, end), sink_file, Path("cache.db"))
 
             sink.seek(0)
-            import jsonlines
 
-            with jsonlines.open(sink.name) as sink_f:
+            with jsonl_reader(sink_file) as sink_f:
                 data = list(sink_f)
 
         print(f"{data=}")

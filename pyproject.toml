@@ -40,10 +40,11 @@ load-plugins = ["pylint_fixme_info"]
 [tool.pylint.messages_control]
 max-line-length = 88
 disable = [
-    "import-outside-toplevel",
-    "line-too-long",
     "duplicate-code",
-    "fixme",
+    "fixme",  # pylint_fixme_info transforms it into Info instead of Warning
+    "import-outside-toplevel",
+    "line-too-long",  # Black already handles it
+    "too-many-arguments",
 ]
 
 [tool.pylint.typecheck]

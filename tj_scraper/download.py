@@ -5,12 +5,12 @@ from typing import Any, Callable
 
 import jsonlines
 
-from .cache import cache, restore, CacheState
+from .cache import save_to_cache, restore, CacheState
 from .process import all_from, has_words_in_subject, IdRange
 
 
 FilterFunction = Callable[[dict[str, Any]], bool]
-DownloadFunction = Callable[[list[str], Path, bool, FilterFunction], None]
+DownloadFunction = Callable[[list[str], Path, Path, bool, FilterFunction], None]
 
 BASE_URLS = {
     "rj": (
@@ -22,6 +22,7 @@ BASE_URLS = {
 def download_from_json(
     ids: list[str],
     sink: Path,
+    cache_path: Path,
     fetch_all_fields: bool = True,
     filter_function: FilterFunction = lambda _: True,
     # pylint: disable=dangerous-default-value
@@ -31,13 +32,6 @@ def download_from_json(
     import aiohttp
     import asyncio
     import json
-
-    results = Path("results")
-
-    def cache(data, state: CacheState):
-        print(f'Saving "{data}" to cache with state {state}.')
-        with jsonlines.open(results / "cache.jsonl", mode="a") as sink_f:
-            sink_f.write(data)  # type: ignore
 
     # pylint: disable=invalid-name
     async def fetch_process(session: aiohttp.ClientSession, id_: str, uf: str):
@@ -53,15 +47,15 @@ def download_from_json(
         match data:
             case ["O processo informado não foi encontrado."]:
                 print(f"{id_}: Not found -- Cached now")
-                cache({"invalido": id_}, state=CacheState.INVALID)
+                save_to_cache({"invalido": id_}, cache_path, state=CacheState.INVALID)
                 return
             case ["Número do processo inválido."]:
                 print(f"{id_}: Invalid -- Cached now")
-                cache({"invalido": id_}, state=CacheState.INVALID)
+                save_to_cache({"invalido": id_}, cache_path, state=CacheState.INVALID)
                 return
 
         if not filter_function(data):
-            cache(data, state=CacheState.CACHED)
+            save_to_cache(data, cache_path, state=CacheState.CACHED)
             subject = data.get("txtAssunto", "Sem Assunto")
             print(f"{id_}: Filtered  -- ({subject}) -- Cached now")
             return "Filtered"
@@ -149,6 +143,7 @@ def download_from_html(
 def download_all_with_ids(
     ids: list[str],
     sink: Path,
+    cache_path: Path,
     fetch_all_fields: bool = True,
     filter_function: FilterFunction = lambda _: True,
     download_function: DownloadFunction = download_from_json,
@@ -157,12 +152,13 @@ def download_all_with_ids(
     Downloads relevant info from all valid process with ID in `ids` and saves
     it into `sink`. Expects `sink` to be in JSONLines format.
     """
-    download_function(ids, sink, fetch_all_fields, filter_function)
+    download_function(ids, sink, cache_path, fetch_all_fields, filter_function)
 
 
 def download_all_from_range(
     id_range: IdRange,
     sink: Path,
+    cache_path: Path,
     fetch_all_fields: bool = True,
     filter_function: FilterFunction = lambda _: True,
     download_function: DownloadFunction = download_from_json,
@@ -173,7 +169,7 @@ def download_all_from_range(
     format.
     """
     ids = all_from(id_range)
-    download_function(list(ids), sink, fetch_all_fields, filter_function)
+    download_function(list(ids), sink, cache_path, fetch_all_fields, filter_function)
 
 
 def processes_by_subject(
@@ -181,7 +177,7 @@ def processes_by_subject(
     words: Collection[str],
     download_function: DownloadFunction,
     output: Path = Path("results") / "raw.jsonl",
-    cache_file: Path = Path("results") / "cache.jsonl",
+    cache_path: Path = Path("results") / "cache.db",
 ):
     """Search for processes that contain the given words on its subject."""
     from .cache import filter_cached
@@ -191,11 +187,11 @@ def processes_by_subject(
 
     all_from_range = set(all_from(id_range))
     (ids, cached_ids), _ = report_time(
-        filter_cached, all_from_range, cache_file=cache_file
+        filter_cached, all_from_range, cache_file=cache_path
     )
     cached_processes = [
         item
-        for item in restore(cache_file)
+        for item in restore(cache_path)
         if item["codProc"] in cached_ids and has_words_in_subject(item, list(words))
     ]
 
@@ -208,6 +204,7 @@ def processes_by_subject(
     download_all_with_ids(
         ids,
         output,
+        cache_path,
         filter_function=lambda item: has_words_in_subject(item, list(words)),
         download_function=download_function,
     )

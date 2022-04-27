@@ -1,5 +1,8 @@
 """Pytest conftest file."""
+from pathlib import Path
 
+
+CACHE_PATH = Path("cache_tests.db")
 LOCAL_URL = (
     "https://www3.tjrj.jus.br/consultaprocessual/api/processos/por-numero/publica"
 )

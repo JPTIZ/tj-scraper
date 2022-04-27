@@ -44,7 +44,7 @@ def create_database(path: Path):
         )
 
 
-def cache(item: Process, cache_path: Path):
+def save_to_cache(item: Process, cache_path: Path, state=CacheState.CACHED):
     """Caches (saves) an item into a database of known items."""
     if not cache_path.exists():
         create_database(cache_path)
@@ -60,7 +60,7 @@ def cache(item: Process, cache_path: Path):
             """,
             (
                 item["idProc"],
-                CacheState.CACHED.value,
+                state.value,
                 item.get("txtAssunto"),
                 json.dumps(item),
             ),
@@ -98,7 +98,7 @@ def restore(
                 f"{extra}",
                 {
                     "exclude_ids": ",".join(exclude_ids),
-                    "subject": ",".join(with_subject)
+                    "subject": ",".join(with_subject),
                 },
             ).fetchall()
         )
@@ -117,6 +117,10 @@ class CacheMetadata:
 
 
 def jsonl_reader(path: Path) -> jsonlines.Reader:
+    """
+    Wrapper for `jsonlines.open` to make it easier to ignore mypy errors about
+    Reader|Writer.
+    """
     return jsonlines.open(path, "r")  # type: ignore
 
 
