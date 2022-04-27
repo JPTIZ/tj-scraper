@@ -4,7 +4,7 @@ from aioresponses import aioresponses
 import pytest
 
 from tj_scraper.download import download_from_json
-from . import LOCAL_URL, MOCK_DB
+from . import CACHE_PATH, LOCAL_URL, MOCK_DB
 
 
 @pytest.fixture()
@@ -76,6 +76,7 @@ def test_download_all_ids(local_tj, results_sink):
     download_from_json(
         ids=ids,
         sink=results_sink,
+        cache_path=CACHE_PATH,
     )
 
     data = retrieve_data(results_sink)
@@ -93,7 +94,7 @@ def test_download_in_parts_without_overlap(local_tj, results_sink):
         local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
 
     for request_ids in request_order:
-        download_from_json(ids=request_ids, sink=results_sink)
+        download_from_json(ids=request_ids, cache_path=CACHE_PATH, sink=results_sink)
 
     data = retrieve_data(results_sink)
 
@@ -110,7 +111,7 @@ def test_download_in_parts_with_overlap(local_tj, results_sink):
         local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
 
     for request_ids in request_order:
-        download_from_json(ids=request_ids, sink=results_sink)
+        download_from_json(ids=request_ids, cache_path=CACHE_PATH, sink=results_sink)
 
     data = retrieve_data(results_sink)
 
@@ -132,7 +133,7 @@ def test_download_with_subject_filter_one_word(local_tj, results_sink):
     for id_ in ids:
         local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
 
-    download_from_json(ids=ids, sink=results_sink)
+    download_from_json(ids=ids, cache_path=CACHE_PATH, sink=results_sink)
 
     data = retrieve_data(results_sink)
 
@@ -157,7 +158,7 @@ def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
     for id_ in ids:
         local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
 
-    download_from_json(ids=ids, sink=results_sink)
+    download_from_json(ids=ids, cache_path=CACHE_PATH, sink=results_sink)
 
     data = retrieve_data(results_sink)
 
