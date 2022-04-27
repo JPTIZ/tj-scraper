@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 import jsonlines
 
-from .cache import restore, CacheState
+from .cache import cache, restore, CacheState
 from .process import all_from, has_words_in_subject, IdRange
 
 

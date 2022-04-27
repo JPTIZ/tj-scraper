@@ -3,12 +3,13 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Optional
+import sqlite3
 
 import jsonlines
 import toml
 
 
-from .process import has_words_in_subject, Process
+from .process import Process
 
 
 class CacheState(Enum):
@@ -27,6 +28,84 @@ class CacheState(Enum):
     NOT_CACHED = "NOT_CACHED"
 
 
+def create_database(path: Path):
+    """Creates database file and its tables."""
+    with sqlite3.connect(path) as connection:
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            create table Processos (
+                id text primary key,
+                cache_state text,
+                assunto text,
+                json text
+            );
+            """
+        )
+
+
+def cache(item: Process, cache_path: Path):
+    """Caches (saves) an item into a database of known items."""
+    if not cache_path.exists():
+        create_database(cache_path)
+
+    with sqlite3.connect(cache_path) as connection:
+        import json
+
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            insert into Processos(id, cache_state, assunto, json)
+            values(?, ?, ?, ?)
+            """,
+            (
+                item["idProc"],
+                CacheState.CACHED.value,
+                item.get("txtAssunto"),
+                json.dumps(item),
+            ),
+        )
+
+
+def restore(
+    cache_path: Path,
+    exclude_ids: Optional[list[str]] = None,
+    with_subject: Optional[list[str]] = None,
+) -> list[Process]:
+    """
+    Loads cached data.
+    """
+    if not cache_path.exists():
+        raise FileNotFoundError(cache_path)
+
+    exclude_ids = exclude_ids or []
+    with_subject = with_subject or []
+
+    with sqlite3.connect(cache_path) as connection:
+        import json
+
+        cursor = connection.cursor()
+
+        extra = ""
+        for word in with_subject:
+            extra += f" and upper(assunto) like '%{word.upper()}%'"
+
+        return list(
+            json.loads(item_json)
+            for item_json, in cursor.execute(
+                "select json from Processos"
+                " where id not in (:exclude_ids) "
+                f"{extra}",
+                {
+                    "exclude_ids": ",".join(exclude_ids),
+                    "subject": ",".join(with_subject)
+                },
+            ).fetchall()
+        )
+
+    return []
+
+
 @dataclass
 class CacheMetadata:
     """
@@ -37,9 +116,8 @@ class CacheMetadata:
     states: dict[str, CacheState]
 
 
-def sort(cache_file: Path):
-    """Sorts data in a cache file so it becomes ordered by ID."""
-    raise NotImplementedError(f"Should sort {cache_file}")
+def jsonl_reader(path: Path) -> jsonlines.Reader:
+    return jsonlines.open(path, "r")  # type: ignore
 
 
 def metadata_path(cache_file: Path) -> Path:
@@ -53,7 +131,7 @@ def create_metadata(cache_file: Path, output: Optional[Path]):
     and/or stored.
     """
     states = {}
-    with jsonlines.open(cache_file, "r") as reader:
+    with jsonl_reader(cache_file) as reader:
         for item in reader:
             match item:
                 case {"codProc": cached_id} as item:
@@ -104,7 +182,7 @@ def dedup_cache(cache_file: Path):
     new_size = 0
 
     cached_items = {}
-    with jsonlines.open(cache_file, "r") as reader:
+    with jsonl_reader(cache_file) as reader:
         for old_size, item in enumerate(reader, start=1):  # type: ignore
             match item:
                 case {"codProc": cached_id} as item:
@@ -138,25 +216,3 @@ def filter_cached(ids: list[str], cache_file: Path) -> tuple[set[str], set[str]]
     filtered_ids = set(ids) - cached_ids
 
     return filtered_ids, cached_ids
-
-
-def restore(
-    cache_file: Path,
-    exclude_ids: Optional[list[str]] = None,
-    with_subject: Optional[list[str]] = None,
-) -> list[Process]:
-    """
-    Loads cached data of given IDs.
-    """
-    exclude_ids = exclude_ids or []
-    with_subject = with_subject or []
-
-    with jsonlines.open(cache_file) as cache_f:
-        data = [
-            item
-            for item in cache_f
-            if item.get("codProc") not in exclude_ids
-            and has_words_in_subject(item, with_subject)
-        ]
-
-    return data
