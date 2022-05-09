@@ -1,10 +1,23 @@
 """Tests download functions."""
 # pylint: disable=redefined-outer-name
+from pathlib import Path
+
 from aioresponses import aioresponses
 import pytest
 
 from tj_scraper.download import download_from_json
 from . import CACHE_PATH, LOCAL_URL, MOCK_DB
+
+
+@pytest.fixture(autouse=True)
+def cache_db():
+    """
+    Creates (once for each test function) a temporary ".db" cache file and
+    deletes after test ends.
+    """
+    path = Path("cache_tests.db")
+    yield path
+    path.unlink(missing_ok=True)
 
 
 @pytest.fixture()
@@ -20,8 +33,6 @@ def local_tj():
 @pytest.fixture()
 def results_sink():
     """A sink file for tests' collected download items."""
-    from pathlib import Path
-
     sink = Path("tests") / "test_results.jsonl"
     yield sink
     sink.unlink(missing_ok=True)
@@ -114,8 +125,9 @@ def test_download_in_parts_with_overlap(local_tj, results_sink):
         download_from_json(ids=request_ids, cache_path=CACHE_PATH, sink=results_sink)
 
     data = retrieve_data(results_sink)
+    expected = list(MOCK_DB.values())
 
-    assert data == list(MOCK_DB.values())
+    assert data == expected
 
 
 def test_download_with_subject_filter_one_word(local_tj, results_sink):

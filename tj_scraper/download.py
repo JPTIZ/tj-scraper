@@ -55,10 +55,20 @@ def download_from_json(
                 return
 
         if not filter_function(data):
-            save_to_cache(data, cache_path, state=CacheState.CACHED)
             subject = data.get("txtAssunto", "Sem Assunto")
             print(f"{id_}: Filtered  -- ({subject}) -- Cached now")
             return "Filtered"
+
+        from tj_scraper.cache import restore_ids
+
+        try:
+            if restore_ids(cache_path, [data["idProc"]]):
+                print(f"{id_}: Cached -- not included")
+                return
+        except FileNotFoundError:
+            pass
+
+        save_to_cache(data, cache_path, state=CacheState.CACHED)
 
         fields = data.keys() if fetch_all_fields else ["idProc", "codProc"]
 
@@ -93,6 +103,9 @@ def download_from_json(
                 ]
 
                 with jsonlines.open(sink, mode="a") as sink_f:
+                    print(
+                        f"Writing {[item['idProc'] for item in data]}\n  -> Reason: Fetched."
+                    )
                     sink_f.write_all(data)  # type: ignore
 
                 partial_ids = [item["idProc"] for item in data]
@@ -196,6 +209,9 @@ def processes_by_subject(
     ]
 
     with jsonlines.open(output, "w") as output_f:
+        print(
+            f"Writing {[item['codProc'] for item in cached_processes]}\n  -> Reason: Cached."
+        )
         output_f.write_all(cached_processes)  # type: ignore
 
     for filtered_id in set(all_from_range) - set(ids):
