@@ -49,6 +49,9 @@ def save_to_cache(item: Process, cache_path: Path, state=CacheState.CACHED):
     if not cache_path.exists():
         create_database(cache_path)
 
+    if restore_ids(cache_path, ids=[str(item["idProc"])]):
+        return
+
     with sqlite3.connect(cache_path) as connection:
         import json
 
@@ -65,6 +68,34 @@ def save_to_cache(item: Process, cache_path: Path, state=CacheState.CACHED):
                 json.dumps(item),
             ),
         )
+
+
+def restore_ids(
+    cache_path: Path,
+    ids: list[str],
+) -> list[Process]:
+    """
+    Loads specific processes from cache with given IDs.
+    """
+    if not cache_path.exists():
+        raise FileNotFoundError(cache_path)
+
+    with sqlite3.connect(cache_path) as connection:
+        import json
+
+        cursor = connection.cursor()
+
+        return [
+            json.loads(item_json)
+            for item_json, in cursor.execute(
+                "select json from Processos" " where id in (:ids)",
+                {
+                    "ids": ",".join(ids),
+                },
+            )
+        ]
+
+    return []
 
 
 def restore(
