@@ -8,3 +8,4 @@ items.json
 *.txt
 results
 samples/
+dist
