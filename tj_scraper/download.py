@@ -41,6 +41,7 @@ def download_from_json(
                 "tipoProcesso": "1",
                 "codigoProcesso": id_,
             },
+            ssl=False,  # FIXME: Properly handle TJ's outdated certificate
         ) as response:
             data = json.loads(await response.text())
 
