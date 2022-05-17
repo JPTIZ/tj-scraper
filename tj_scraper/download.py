@@ -47,11 +47,11 @@ def download_from_json(
         match data:
             case ["O processo informado não foi encontrado."]:
                 print(f"{id_}: Not found -- Cached now")
-                save_to_cache({"invalido": id_}, cache_path, state=CacheState.INVALID)
+                save_to_cache({"idProc": id_}, cache_path, state=CacheState.INVALID)
                 return
             case ["Número do processo inválido."]:
                 print(f"{id_}: Invalid -- Cached now")
-                save_to_cache({"invalido": id_}, cache_path, state=CacheState.INVALID)
+                save_to_cache({"idProc": id_}, cache_path, state=CacheState.INVALID)
                 return
 
         if not filter_function(data):
@@ -204,7 +204,6 @@ def processes_by_subject(
     )
     ids = list(ids)
     cached_ids = list(cached_ids)
-    # import pdb; pdb.set_trace()
     cached_processes = [
         item
         for item in restore(cache_path)
