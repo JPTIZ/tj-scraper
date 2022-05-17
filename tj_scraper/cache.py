@@ -200,15 +200,25 @@ def create_metadata(cache_file: Path, output: Optional[Path]):
 
 def load_metadata(cache_file: Path) -> CacheMetadata:
     """Returns an object containing a cache-file's metadata."""
-    with open(
-        cache_file.with_name(f"{cache_file.stem}-meta.toml"), encoding="utf-8"
-    ) as reader:
-        cache = toml.load(reader)
+    if not cache_file.exists():
+        create_database(cache_file)
 
-    return CacheMetadata(
-        describes=cache["meta"]["describes"],
-        states={k: CacheState(v) for k, v in cache["states"].items()},
-    )
+    with sqlite3.connect(cache_file) as connection:
+        cursor = connection.cursor()
+
+        states = {
+            process_id: CacheState(cache_state)
+            for process_id, cache_state, in cursor.execute(
+                "select id, cache_state from Processos"
+            )
+        }
+
+        return CacheMetadata(
+            describes=cache_file,
+            states=states,
+        )
+
+    return CacheMetadata(describes=cache_file, states={})
 
 
 def dedup_cache(cache_file: Path):

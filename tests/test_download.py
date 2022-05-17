@@ -9,17 +9,6 @@ from tj_scraper.download import download_from_json
 from . import CACHE_PATH, LOCAL_URL, MOCK_DB
 
 
-@pytest.fixture(autouse=True)
-def cache_db():
-    """
-    Creates (once for each test function) a temporary ".db" cache file and
-    deletes after test ends.
-    """
-    path = Path("cache_tests.db")
-    yield path
-    path.unlink(missing_ok=True)
-
-
 @pytest.fixture()
 def local_tj():
     """

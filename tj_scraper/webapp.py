@@ -7,6 +7,7 @@ from .cache import jsonl_reader
 
 def make_webapp():
     """Creates the tj_scraper flask application."""
+    # pylint: disable=redefined-outer-name
     app = Flask(__name__)
 
     @app.route("/")
@@ -112,3 +113,7 @@ def make_webapp():
                     return send_file(xlsx_file.name, attachment_filename=filename)
 
     return app
+
+
+# FIXME: For now, it is just to ensure UWSGI will properly load this object.
+app = make_webapp()
