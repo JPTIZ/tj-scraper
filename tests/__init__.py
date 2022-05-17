@@ -6,6 +6,11 @@ CACHE_PATH = Path("cache_tests.db")
 LOCAL_URL = (
     "https://www3.tjrj.jus.br/consultaprocessual/api/processos/por-numero/publica"
 )
+REALISTIC_IDS = {
+    "1": "2021.001.150000-1",
+    "2": "2021.001.150000-2",
+    "3": "2021.001.150000-3",
+}
 MOCK_DB = {
     "1": {
         "cidade": "Rio de Janeiro",

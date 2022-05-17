@@ -202,6 +202,9 @@ def processes_by_subject(
     (ids, cached_ids), _ = report_time(
         filter_cached, all_from_range, cache_file=cache_path
     )
+    ids = list(ids)
+    cached_ids = list(cached_ids)
+    # import pdb; pdb.set_trace()
     cached_processes = [
         item
         for item in restore(cache_path)

@@ -164,3 +164,38 @@ def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
     data = retrieve_data(results_sink)
 
     assert data == expected_values
+
+
+def test_processes_by_subject_with_one_word(local_tj, results_sink):
+    """
+    Like `test_download_with_subject_filter_one_word`, but by calling
+    `processes_with_subject`.
+    """
+    from tj_scraper.process import has_words_in_subject
+    from tj_scraper.download import processes_by_subject
+    from . import REALISTIC_IDS
+
+    expected = {
+        REALISTIC_IDS[k]: v
+        for k, v in MOCK_DB.items()
+        if has_words_in_subject(v, ["furto"])
+    }
+    ids = [v["idProc"] for v in expected.values()]
+    expected_values = sorted(expected.values(), key=lambda d: d["idProc"])
+
+    for process in MOCK_DB.values():
+        local_tj.post(LOCAL_URL, payload=process)
+
+    ids = (REALISTIC_IDS[min(ids)], REALISTIC_IDS[max(ids)])
+
+    processes_by_subject(
+        id_range=ids,
+        words=["furto"],
+        download_function=download_from_json,
+        output=results_sink,
+        cache_path=CACHE_PATH,
+    )
+
+    data = retrieve_data(results_sink)
+
+    assert data == expected_values

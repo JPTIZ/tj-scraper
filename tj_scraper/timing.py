@@ -7,9 +7,14 @@ def timeit(function: Callable, *args, **kwargs):
     """
     Runs a function and returns how much time in seconds it took to execute it.
     """
-    start = time()
-    result = function(*args, **kwargs)
-    end = time()
+    try:
+        start = time()
+        result = function(*args, **kwargs)
+        end = time()
+    except TypeError:
+        start = time()
+        result = function(*args)
+        end = time()
 
     return result, end - start
 
