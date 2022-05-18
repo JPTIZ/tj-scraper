@@ -41,4 +41,7 @@ MOCK_DB = {
         "idProc": "3",
         "txtAssunto": "Furto (Art. 155 - CP), § 1º E Receptação (Art. 180 - Cp)",
     },
+    "4": {
+        "idProc": "4",
+    },
 }

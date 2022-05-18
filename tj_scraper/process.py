@@ -1,5 +1,5 @@
 """Related to a TJ's juridical process."""
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 
 IdRange = Union[tuple[str, str], str]
@@ -8,6 +8,17 @@ IdRange = Union[tuple[str, str], str]
 Value = str
 Object = dict[str, str]
 ProcessField = Union[str, list[Object]]
+
+
+# class ProcessRequiredFields(TypedDict):
+#     idProc: str
+#
+#
+# class Process(ProcessRequiredFields, total=False):
+#     codProc: str
+#     txtAssunto: str
+
+
 Process = dict[str, ProcessField]
 
 
@@ -77,9 +88,12 @@ def all_from(range_: IdRange):
         yield start
 
 
-def has_words_in_subject(data: dict[str, Any], words: list[str]):
+def has_words_in_subject(data: Process, words: list[str]):
     """Checks if data's subject field contains any of certains words."""
-    assunto = data.get("txtAssunto", "Sem Assunto").lower()
+    assunto = data.get("txtAssunto", "Sem Assunto")
+    if isinstance(assunto, list):
+        assunto = " ".join(map(str, assunto))
+    assunto = assunto.lower()
     has = any(word.lower() in assunto for word in words)
     print(f"{has} for {words} in {assunto}")
     return has

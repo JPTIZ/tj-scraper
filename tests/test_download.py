@@ -5,8 +5,10 @@ from pathlib import Path
 from aioresponses import aioresponses
 import pytest
 
-from tj_scraper.download import download_from_json
-from . import CACHE_PATH, LOCAL_URL, MOCK_DB
+from tj_scraper.download import download_from_json, processes_by_subject
+from tj_scraper.process import has_words_in_subject
+
+from . import CACHE_PATH, LOCAL_URL, MOCK_DB, REALISTIC_IDS
 
 
 @pytest.fixture()
@@ -125,8 +127,6 @@ def test_download_with_subject_filter_one_word(local_tj, results_sink):
     specific word on their subjects.
     """
     # FIXME: This test actually doesn't filter subjects with `processes_with_subject`.
-    from tj_scraper.process import has_words_in_subject
-
     expected = {k: v for k, v in MOCK_DB.items() if has_words_in_subject(v, ["furto"])}
     ids = list(expected.keys())
     expected_values = sorted(expected.values(), key=lambda d: d["idProc"])
@@ -146,8 +146,6 @@ def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
     Tests if download function is able to filter only items that contains some
     specific words on their subjects.
     """
-    from tj_scraper.process import has_words_in_subject
-
     expected = {
         k: v
         for k, v in MOCK_DB.items()
@@ -166,15 +164,43 @@ def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
     assert data == expected_values
 
 
+def test_processes_by_subject_one_is_invalid(local_tj, results_sink):
+    """
+    Tests if `processes_with_subject` properly handles invalid IDs.
+    """
+    expected = {
+        REALISTIC_IDS[k]: v
+        for k, v in MOCK_DB.items()
+        if v.get("txtAssunto") is not None
+    }
+    ids = [v["idProc"] for v in expected.values()]
+    expected_values = sorted(expected.values(), key=lambda d: d["idProc"])
+
+    for expected in MOCK_DB.values():
+        if expected.get("txtAssunto") is None:
+            expected = ["Número do processo inválido."]
+        local_tj.post(LOCAL_URL, payload=expected)
+
+    ids = (REALISTIC_IDS[min(ids)], REALISTIC_IDS[max(ids)])
+
+    processes_by_subject(
+        id_range=ids,
+        words=["furto"],
+        download_function=download_from_json,
+        output=results_sink,
+        cache_path=CACHE_PATH,
+    )
+
+    data = retrieve_data(results_sink)
+
+    assert data == expected_values
+
+
 def test_processes_by_subject_with_one_word(local_tj, results_sink):
     """
     Like `test_download_with_subject_filter_one_word`, but by calling
     `processes_with_subject`.
     """
-    from tj_scraper.process import has_words_in_subject
-    from tj_scraper.download import processes_by_subject
-    from . import REALISTIC_IDS
-
     expected = {
         REALISTIC_IDS[k]: v
         for k, v in MOCK_DB.items()
