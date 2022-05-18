@@ -221,28 +221,6 @@ def load_metadata(cache_file: Path) -> CacheMetadata:
     return CacheMetadata(describes=cache_file, states={})
 
 
-def dedup_cache(cache_file: Path):
-    """Deduplicate cache entries based on their ID. Keeps last one found."""
-    old_size = 0
-    new_size = 0
-
-    cached_items = {}
-    with jsonl_reader(cache_file) as reader:
-        for old_size, item in enumerate(reader, start=1):  # type: ignore
-            match item:
-                case {"codProc": cached_id} as item:
-                    cached_items[cached_id] = item
-
-    dedup_cache_file = cache_file.with_stem(f"{cache_file.stem}-dedup")
-    with jsonlines.open(dedup_cache_file, "w") as writer:
-        items = cached_items.values()
-        new_size = len(items)
-
-        writer.write_all(items)  # type: ignore
-
-    print(f"Removed {old_size - new_size} duplicates")
-
-
 def filter_cached(ids: list[str], cache_file: Path) -> tuple[set[str], set[str]]:
     """
     Filters IDs that are already cached. Returns a tuple with uncached and

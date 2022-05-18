@@ -34,14 +34,6 @@ def make_app():
         print(f"Cache file has a total of {i} entries")
 
     @cache_cmd.command()
-    def dedup(
-        cache_file: Path = Path("results") / "cache.jsonl",
-    ):  # pylint: disable=unused-variable
-        from .cache import dedup_cache
-
-        dedup_cache(cache_file)
-
-    @cache_cmd.command()
     def restore(
         cache_file: Path = Path("results") / "cache.jsonl",
     ):
