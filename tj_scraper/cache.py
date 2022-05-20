@@ -6,10 +6,9 @@ from typing import Optional
 import sqlite3
 
 import jsonlines
-import toml
 
 
-from .process import Process
+from .process import Process, get_db_id
 
 
 class CacheState(Enum):
@@ -49,7 +48,9 @@ def save_to_cache(item: Process, cache_path: Path, state=CacheState.CACHED):
     if not cache_path.exists():
         create_database(cache_path)
 
-    if restore_ids(cache_path, ids=[str(item["idProc"])]):
+    item_db_id = get_db_id(item)
+
+    if restore_ids(cache_path, ids=[item_db_id]):
         return
 
     with sqlite3.connect(cache_path) as connection:
@@ -62,7 +63,7 @@ def save_to_cache(item: Process, cache_path: Path, state=CacheState.CACHED):
             values(?, ?, ?, ?)
             """,
             (
-                item["idProc"],
+                item_db_id,
                 state.value,
                 item.get("txtAssunto"),
                 json.dumps(item),
@@ -155,55 +156,17 @@ def jsonl_reader(path: Path) -> jsonlines.Reader:
     return jsonlines.open(path, "r")  # type: ignore
 
 
-def metadata_path(cache_file: Path) -> Path:
+def metadata_path(cache_path: Path) -> Path:
     """Retrieves path for cache-file's metadata."""
-    return cache_file.with_name(f"{cache_file.stem}-meta.toml")
+    return cache_path.with_name(f"{cache_path.stem}-meta.toml")
 
 
-def create_metadata(cache_file: Path, output: Optional[Path]):
-    """
-    Creates a separated cache file that only contains IDs and if they're valid
-    and/or stored.
-    """
-    states = {}
-    with jsonl_reader(cache_file) as reader:
-        for item in reader:
-            match item:
-                case {"codProc": cached_id} as item:
-                    states[cached_id] = CacheState.CACHED
-                case {"invalido": cached_id} as item:
-                    print("Found invalid one!")
-                    states[cached_id] = CacheState.INVALID
-
-    metadata = CacheMetadata(
-        describes=cache_file,
-        states=states,
-    )
-
-    if not output:
-        output = metadata_path(cache_file)
-
-    with open(output, "w", encoding="utf-8") as file_:
-        file_.write(
-            toml.dumps(
-                {
-                    "meta": {
-                        "describes": metadata.describes.as_posix(),
-                    },
-                    "states": {
-                        cached_id: state.name for cached_id, state in states.items()
-                    },
-                }
-            )
-        )
-
-
-def load_metadata(cache_file: Path) -> CacheMetadata:
+def load_metadata(cache_path: Path) -> CacheMetadata:
     """Returns an object containing a cache-file's metadata."""
-    if not cache_file.exists():
-        create_database(cache_file)
+    if not cache_path.exists():
+        create_database(cache_path)
 
-    with sqlite3.connect(cache_file) as connection:
+    with sqlite3.connect(cache_path) as connection:
         cursor = connection.cursor()
 
         states = {
@@ -214,21 +177,21 @@ def load_metadata(cache_file: Path) -> CacheMetadata:
         }
 
         return CacheMetadata(
-            describes=cache_file,
+            describes=cache_path,
             states=states,
         )
 
-    return CacheMetadata(describes=cache_file, states={})
+    return CacheMetadata(describes=cache_path, states={})
 
 
-def filter_cached(ids: list[str], cache_file: Path) -> tuple[set[str], set[str]]:
+def filter_cached(ids: list[str], cache_path: Path) -> tuple[set[str], set[str]]:
     """
     Filters IDs that are already cached. Returns a tuple with uncached and
     cached ids, respectively.
     """
     ids = [*ids]
     cached_ids = set()
-    cache = load_metadata(cache_file)
+    cache = load_metadata(cache_path)
 
     cached_ids = {
         cached_id

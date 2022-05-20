@@ -6,7 +6,15 @@ from typing import Any, Callable
 import jsonlines
 
 from .cache import save_to_cache, restore, CacheState
-from .process import all_from, has_words_in_subject, IdRange
+from .process import (
+    DB_FIELD,
+    IdRange,
+    REAL_ID_FIELD,
+    all_from,
+    get_db_id,
+    get_real_id,
+    has_words_in_subject,
+)
 
 
 FilterFunction = Callable[[dict[str, Any]], bool]
@@ -48,11 +56,11 @@ def download_from_json(
         match data:
             case ["O processo informado não foi encontrado."]:
                 print(f"{id_}: Not found -- Cached now")
-                save_to_cache({"idProc": id_}, cache_path, state=CacheState.INVALID)
+                save_to_cache({DB_FIELD: id_}, cache_path, state=CacheState.INVALID)
                 return
             case ["Número do processo inválido."]:
                 print(f"{id_}: Invalid -- Cached now")
-                save_to_cache({"idProc": id_}, cache_path, state=CacheState.INVALID)
+                save_to_cache({DB_FIELD: id_}, cache_path, state=CacheState.INVALID)
                 return
 
         if not filter_function(data):
@@ -63,7 +71,7 @@ def download_from_json(
         from tj_scraper.cache import restore_ids
 
         try:
-            if restore_ids(cache_path, [data["idProc"]]):
+            if restore_ids(cache_path, [get_db_id(data)]):
                 print(f"{id_}: Cached -- not included")
                 return
         except FileNotFoundError:
@@ -71,7 +79,7 @@ def download_from_json(
 
         save_to_cache(data, cache_path, state=CacheState.CACHED)
 
-        fields = data.keys() if fetch_all_fields else ["idProc", "codProc"]
+        fields = data.keys() if fetch_all_fields else [DB_FIELD, REAL_ID_FIELD]
 
         data = {k: v for k, v in data.items() if k in fields}
         print(f"Fetched process {id_}: {data.get('txtAssunto', 'Sem Assunto')}")
@@ -105,11 +113,11 @@ def download_from_json(
 
                 with jsonlines.open(sink, mode="a") as sink_f:
                     print(
-                        f"Writing {[item['idProc'] for item in data]}\n  -> Reason: Fetched."
+                        f"Writing {[get_real_id(item) for item in data]}\n  -> Reason: Fetched."
                     )
                     sink_f.write_all(data)  # type: ignore
 
-                partial_ids = [item["idProc"] for item in data]
+                partial_ids = [get_real_id(item) for item in data]
 
                 print(
                     f"Partial result: {partial_ids} ({filtered} filtered, {invalid} invalid)"
@@ -201,19 +209,26 @@ def processes_by_subject(
 
     all_from_range = set(all_from(id_range))
     (ids, cached_ids), _ = report_time(
-        filter_cached, all_from_range, cache_file=cache_path
+        filter_cached, all_from_range, cache_path=cache_path
     )
     ids = list(ids)
     cached_ids = list(cached_ids)
     cached_processes = [
         item
         for item in restore(cache_path)
-        if item["codProc"] in cached_ids and has_words_in_subject(item, list(words))
+        if item.get(DB_FIELD, "") in cached_ids
+        and has_words_in_subject(item, list(words))
     ]
 
+    if not cached_processes:
+        print(f"No cached processes for given ID Range ({id_range}).")
+
+    # TODO: Make a `write_to_sink([items], sink: Path)` function
     with jsonlines.open(output, "w") as output_f:
         print(
-            f"Writing {[item['codProc'] for item in cached_processes]}\n  -> Reason: Cached."
+            f"Writing {[(get_db_id(item), get_real_id(item)) for item in cached_processes]}\n"
+            f"  -> Total items: {len(cached_processes)}."
+            "  -> Reason: Cached."
         )
         output_f.write_all(cached_processes)  # type: ignore
 

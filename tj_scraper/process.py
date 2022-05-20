@@ -22,6 +22,20 @@ ProcessField = Union[str, list[Object]]
 Process = dict[str, ProcessField]
 
 
+DB_FIELD = "idProc"
+REAL_ID_FIELD = "codProc"
+
+
+def get_db_id(process: Process) -> str:
+    """Gets the process ID used as a key to the database."""
+    return str(process[DB_FIELD])
+
+
+def get_real_id(process: Process) -> str:
+    """Gets the process ID used as a unique identifier given by TJ."""
+    return str(process[REAL_ID_FIELD])
+
+
 def id_or_range(process_id: str) -> IdRange:
     """Evaluates a "<start>..<end>" or a "<process id>" string."""
     start, *end = process_id.split("..")
@@ -95,5 +109,5 @@ def has_words_in_subject(data: Process, words: list[str]):
         assunto = " ".join(map(str, assunto))
     assunto = assunto.lower()
     has = any(word.lower() in assunto for word in words)
-    print(f"{has} for {words} in {assunto}")
+    # print(f"{has} for {words} in {assunto}")
     return has

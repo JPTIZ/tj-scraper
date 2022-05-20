@@ -15,7 +15,7 @@ MOCK_DB = {
     "1": {
         "cidade": "Rio de Janeiro",
         "codCnj": "0000000-11.2021.4.55.6666",
-        "codProc": "2021.001.150000-0",
+        "codProc": REALISTIC_IDS["1"],
         "dataDis": "01/01/2021",
         "idProc": "1",
         "txtAssunto": "Furto  (Art. 155 - CP)",
@@ -36,12 +36,15 @@ MOCK_DB = {
     },
     "2": {
         "idProc": "2",
+        "codProc": REALISTIC_IDS["2"],
     },
     "3": {
         "idProc": "3",
+        "codProc": REALISTIC_IDS["3"],
         "txtAssunto": "Furto (Art. 155 - CP), § 1º E Receptação (Art. 180 - Cp)",
     },
-    "4": {
-        "idProc": "4",
-    },
+    # "4": {
+    #     "idProc": "4",
+    #     "codProc": "4",
+    # },
 }

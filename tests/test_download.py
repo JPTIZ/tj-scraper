@@ -6,9 +6,46 @@ from aioresponses import aioresponses
 import pytest
 
 from tj_scraper.download import download_from_json, processes_by_subject
-from tj_scraper.process import has_words_in_subject
+from tj_scraper.process import has_words_in_subject, get_db_id
 
 from . import CACHE_PATH, LOCAL_URL, MOCK_DB, REALISTIC_IDS
+
+
+@pytest.fixture(autouse=True)
+def show_cache_state(request):
+    """Shows current cache state when a test fails."""
+    from pprint import pprint
+
+    yield
+
+    if request.node.rep_call.failed:
+        print("Download test failed. Cache state:")
+        try:
+            state = {
+                i: {"ID": i, "CacheState": s, "Assunto": a, "JSON": v}
+                for (i, s, a, v) in load_all(cache_path=CACHE_PATH)
+            }
+            pprint(state)
+        except Exception as error:  # pylint: disable=broad-except
+            print(" [ Failed to fetch cache state. ]")
+            print(f" [ Reason: {error}. ]")
+
+
+def load_all(cache_path: Path):
+    """Loads entire database content. For small DBs only (e.g. testing)."""
+    import json
+    import sqlite3
+
+    with sqlite3.connect(cache_path) as connection:
+        cursor = connection.cursor()
+
+        return [
+            (id_, cache_state, assunto, json.loads(item_json))
+            for id_, cache_state, assunto, item_json, in cursor.execute(
+                "select id, cache_state, assunto, json from Processos",
+            )
+        ]
+    return []
 
 
 @pytest.fixture()
@@ -129,7 +166,7 @@ def test_download_with_subject_filter_one_word(local_tj, results_sink):
     # FIXME: This test actually doesn't filter subjects with `processes_with_subject`.
     expected = {k: v for k, v in MOCK_DB.items() if has_words_in_subject(v, ["furto"])}
     ids = list(expected.keys())
-    expected_values = sorted(expected.values(), key=lambda d: d["idProc"])
+    expected_values = sorted(expected.values(), key=get_db_id)
 
     for id_ in ids:
         local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
@@ -152,7 +189,7 @@ def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
         if has_words_in_subject(v, ["furto", "receptação"])
     }
     ids = list(expected.keys())
-    expected_values = sorted(expected.values(), key=lambda d: d["idProc"])
+    expected_values = sorted(expected.values(), key=get_db_id)
 
     for id_ in ids:
         local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
@@ -173,8 +210,8 @@ def test_processes_by_subject_one_is_invalid(local_tj, results_sink):
         for k, v in MOCK_DB.items()
         if v.get("txtAssunto") is not None
     }
-    ids = [v["idProc"] for v in expected.values()]
-    expected_values = sorted(expected.values(), key=lambda d: d["idProc"])
+    ids = [get_db_id(v) for v in expected.values()]
+    expected_values = sorted(expected.values(), key=get_db_id)
 
     for expected in MOCK_DB.values():
         if expected.get("txtAssunto") is None:
@@ -206,8 +243,8 @@ def test_processes_by_subject_with_one_word(local_tj, results_sink):
         for k, v in MOCK_DB.items()
         if has_words_in_subject(v, ["furto"])
     }
-    ids = [v["idProc"] for v in expected.values()]
-    expected_values = sorted(expected.values(), key=lambda d: d["idProc"])
+    ids = [get_db_id(v) for v in expected.values()]
+    expected_values = sorted(expected.values(), key=get_db_id)
 
     for process in MOCK_DB.values():
         local_tj.post(LOCAL_URL, payload=process)
@@ -225,3 +262,56 @@ def test_processes_by_subject_with_one_word(local_tj, results_sink):
     data = retrieve_data(results_sink)
 
     assert data == expected_values
+
+
+def test_download_same_processes_twice(local_tj, results_sink):
+    """
+    Like `test_download_with_subject_filter_one_word`, but by calling
+    `processes_with_subject`.
+    """
+    # TODO: Transform backend process handling into a function and use it in
+    # every test.
+    from aioresponses import CallbackResult
+
+    def reverse_lookup(dict_, key):
+        for k, value in dict_.items():
+            if value == key:
+                return k
+        return None
+
+    def callback(_, **kwargs):
+        json = kwargs["json"]
+        process_id = reverse_lookup(REALISTIC_IDS, json["codigoProcesso"])
+        payload = (
+            MOCK_DB[process_id]
+            if process_id is not None
+            else ["Número do processo inválido."]
+        )
+        return CallbackResult(status=200, payload=payload)
+
+    for curr_step in range(2):
+        expected = {
+            REALISTIC_IDS[k]: v
+            for k, v in MOCK_DB.items()
+            if has_words_in_subject(v, ["furto"])
+        }
+        ids = [get_db_id(v) for v in expected.values()]
+        expected_values = sorted(expected.values(), key=get_db_id)
+
+        local_tj.post(LOCAL_URL, callback=callback, repeat=True)
+
+        ids = (REALISTIC_IDS[min(ids)], REALISTIC_IDS[max(ids)])
+
+        processes_by_subject(
+            id_range=ids,
+            words=["furto"],
+            download_function=download_from_json,
+            output=results_sink,
+            cache_path=CACHE_PATH,
+        )
+
+        print(f"Finished step {curr_step}")
+        data = retrieve_data(results_sink)
+        data = sorted(list(data), key=get_db_id)
+
+        assert data == expected_values
