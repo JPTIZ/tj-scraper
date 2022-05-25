@@ -51,13 +51,33 @@ def load_all(cache_path: Path):
     return []
 
 
+def reverse_lookup(dict_, value):
+    """Returns which key has a certain value."""
+    for key, value_ in dict_.items():
+        if value_ == value:
+            return key
+    return None
+
+
 @pytest.fixture()
 def local_tj():
     """
     Gives a aioresponses wrapper so aiohttp requests actually fallback to a
     local TJ database.
     """
+
+    def callback(_, **kwargs):
+        json = kwargs["json"]
+        process_id = reverse_lookup(REAL_IDS, json["codigoProcesso"])
+        payload = (
+            MOCK_DB[process_id]
+            if process_id is not None
+            else ["Número do processo inválido."]
+        )
+        return CallbackResult(status=200, payload=payload)
+
     with aioresponses() as mocked_aiohttp:
+        mocked_aiohttp.post(LOCAL_URL, callback=callback, repeat=True)
         yield mocked_aiohttp
 
 
@@ -78,6 +98,10 @@ def retrieve_data(results_sink) -> list[dict[str, str]]:
 
 
 def has_same_entries(lhs, rhs):
+    """
+    Checks if `lhs` and `rhs` contain the same entries even if they're on
+    different positions.
+    """
     assert sorted(list(lhs), key=get_db_id) == sorted(list(rhs), key=get_db_id)  # type: ignore
     return True
 
@@ -155,8 +179,7 @@ def test_download_in_parts_with_overlap(local_tj, results_sink):
 
     request_ids = list(REAL_IDS.values())
 
-    for id_ in flatten(request_order):
-        local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
+    request_order = [request_ids[:2], request_ids[1:]]
 
     for request_ids in request_order:
         download_from_json(ids=request_ids, cache_path=CACHE_PATH, sink=results_sink)
@@ -178,9 +201,6 @@ def test_download_with_subject_filter_one_word(local_tj, results_sink):
     expected = {k: v for k, v in MOCK_DB.items() if has_words_in_subject(v, ["furto"])}
     ids = [REAL_IDS[key] for key in expected.keys()]
     expected_values = sorted(expected.values(), key=get_db_id)
-
-    for id_ in ids:
-        local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
 
     download_from_json(ids=ids, cache_path=CACHE_PATH, sink=results_sink)
 
@@ -204,9 +224,6 @@ def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
     ids = [REAL_IDS[key] for key in expected.keys()]
     expected_values = sorted(expected.values(), key=get_db_id)
 
-    for id_ in ids:
-        local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
-
     download_from_json(ids=ids, cache_path=CACHE_PATH, sink=results_sink)
 
     data = retrieve_data(results_sink)
@@ -221,17 +238,10 @@ def test_processes_by_subject_one_is_invalid(local_tj, results_sink):
     ignore_unused(local_tj)
 
     expected = {
-        REAL_IDS[k]: v
-        for k, v in MOCK_DB.items()
-        if v.get("txtAssunto") is not None
+        REAL_IDS[k]: v for k, v in MOCK_DB.items() if v.get("txtAssunto") is not None
     }
     ids = [get_db_id(v) for v in expected.values()]
     expected_values = sorted(expected.values(), key=get_db_id)
-
-    for expected in MOCK_DB.values():
-        if expected.get("txtAssunto") is None:
-            expected = ["Número do processo inválido."]
-        local_tj.post(LOCAL_URL, payload=expected)
 
     ids = (REAL_IDS[min(ids)], REAL_IDS[max(ids)])
 
@@ -256,15 +266,10 @@ def test_processes_by_subject_with_one_word(local_tj, results_sink):
     ignore_unused(local_tj)
 
     expected = {
-        REAL_IDS[k]: v
-        for k, v in MOCK_DB.items()
-        if has_words_in_subject(v, ["furto"])
+        REAL_IDS[k]: v for k, v in MOCK_DB.items() if has_words_in_subject(v, ["furto"])
     }
     ids = [get_db_id(v) for v in expected.values()]
     expected_values = sorted(expected.values(), key=get_db_id)
-
-    for process in MOCK_DB.values():
-        local_tj.post(LOCAL_URL, payload=process)
 
     ids = (REAL_IDS[min(ids)], REAL_IDS[max(ids)])
 
@@ -286,25 +291,6 @@ def test_download_same_processes_twice(local_tj, results_sink):
     Like `test_download_with_subject_filter_one_word`, but by calling
     `processes_with_subject`.
     """
-    # TODO: Transform backend process handling into a function and use it in
-    # every test.
-    from aioresponses import CallbackResult
-
-    def reverse_lookup(dict_, key):
-        for k, value in dict_.items():
-            if value == key:
-                return k
-        return None
-
-    def callback(_, **kwargs):
-        json = kwargs["json"]
-        process_id = reverse_lookup(REALISTIC_IDS, json["codigoProcesso"])
-        payload = (
-            MOCK_DB[process_id]
-            if process_id is not None
-            else ["Número do processo inválido."]
-        )
-        return CallbackResult(status=200, payload=payload)
     ignore_unused(local_tj)
 
     for curr_step in range(2):
@@ -315,8 +301,6 @@ def test_download_same_processes_twice(local_tj, results_sink):
         }
         ids = [get_db_id(v) for v in expected.values()]
         expected_values = sorted(expected.values(), key=get_db_id)
-
-        local_tj.post(LOCAL_URL, callback=callback, repeat=True)
 
         ids = (REAL_IDS[min(ids)], REAL_IDS[max(ids)])
 
@@ -330,6 +314,31 @@ def test_download_same_processes_twice(local_tj, results_sink):
 
         print(f"Finished step {curr_step}")
         data = retrieve_data(results_sink)
-        data = sorted(list(data), key=get_db_id)
 
         assert has_same_entries(data, expected_values)
+
+
+def test_download_processes_by_subject_with_empty_subject(local_tj, results_sink):
+    """
+    Like `test_download_with_subject_filter_one_word`, but by calling
+    `processes_with_subject`.
+    """
+    ignore_unused(local_tj)
+
+    expected = {REAL_IDS[k]: v for k, v in MOCK_DB.items()}
+    ids = [get_db_id(v) for v in expected.values()]
+    expected_values = sorted(expected.values(), key=get_db_id)
+
+    ids = (REAL_IDS[min(ids)], REAL_IDS[max(ids)])
+
+    processes_by_subject(
+        id_range=ids,
+        words="".split(),
+        download_function=download_from_json,
+        output=results_sink,
+        cache_path=CACHE_PATH,
+    )
+
+    data = retrieve_data(results_sink)
+
+    assert has_same_entries(data, expected_values)
