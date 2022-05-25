@@ -41,15 +41,6 @@ def make_app():
 
         print(restore(cache_file, []))
 
-    @cache_cmd.command()
-    def create_metadata(
-        cache_file: Path = Path("results") / "cache.jsonl",
-        output: Optional[Path] = None,
-    ):
-        from .cache import create_metadata
-
-        create_metadata(cache_file, output)
-
     app.add_typer(cache_cmd, name="cache")
 
     @app.command()
