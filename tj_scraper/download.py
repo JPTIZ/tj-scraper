@@ -56,11 +56,19 @@ def download_from_json(
         match data:
             case ["O processo informado não foi encontrado."]:
                 print(f"{id_}: Not found -- Cached now")
-                save_to_cache({DB_FIELD: id_}, cache_path, state=CacheState.INVALID)
+                save_to_cache(
+                    {REAL_ID_FIELD: id_, DB_FIELD: id_},
+                    cache_path,
+                    state=CacheState.INVALID,
+                )
                 return
             case ["Número do processo inválido."]:
                 print(f"{id_}: Invalid -- Cached now")
-                save_to_cache({DB_FIELD: id_}, cache_path, state=CacheState.INVALID)
+                save_to_cache(
+                    {REAL_ID_FIELD: id_, DB_FIELD: id_},
+                    cache_path,
+                    state=CacheState.INVALID,
+                )
                 return
 
         if not filter_function(data):
