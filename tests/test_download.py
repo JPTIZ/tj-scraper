@@ -1,14 +1,17 @@
 """Tests download functions."""
 # pylint: disable=redefined-outer-name
+# pylint: disable=unused-argument
+# pyright: reportUnusedImport=false
 from pathlib import Path
 
-from aioresponses import aioresponses
+from aioresponses import aioresponses, CallbackResult
 import pytest
 
 from tj_scraper.download import download_from_json, processes_by_subject
 from tj_scraper.process import has_words_in_subject, get_db_id
 
-from . import CACHE_PATH, LOCAL_URL, MOCK_DB, REALISTIC_IDS
+from . import CACHE_PATH, LOCAL_URL, MOCK_DB, REAL_IDS
+from .conftest import ignore_unused
 
 
 @pytest.fixture(autouse=True)
@@ -74,20 +77,28 @@ def retrieve_data(results_sink) -> list[dict[str, str]]:
         return list(sink)  # type: ignore
 
 
+def has_same_entries(lhs, rhs):
+    assert sorted(list(lhs), key=get_db_id) == sorted(list(rhs), key=get_db_id)  # type: ignore
+    return True
+
+
 def flatten(list_of_lists):
     """Flattens a list of lists into a simple 1D list."""
     return [item for sublist in list_of_lists for item in sublist]
 
 
 def test_sanity(local_tj):
-    """Sanity-check. Ensures aioresponses' wrapper is working accordingly."""
+    """
+    Sanity-check. Ensures aioresponses' wrapper's minimal funcionality is
+    working accordingly.
+    """
+    ignore_unused(local_tj)
+
     import aiohttp
     import asyncio
     import json
 
     id_ = "1"
-
-    local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
 
     async def sanity_check():
         async with aiohttp.ClientSession() as session:
@@ -95,7 +106,7 @@ def test_sanity(local_tj):
                 LOCAL_URL,
                 json={
                     "tipoProcesso": "1",
-                    "codigoProcesso": id_,
+                    "codigoProcesso": REAL_IDS[id_],
                 },
             ) as response:
                 data = json.loads(await response.text())
@@ -107,30 +118,28 @@ def test_sanity(local_tj):
 
 def test_download_all_ids(local_tj, results_sink):
     """Tests if download functions is able to fetch all data."""
-    ids = list(MOCK_DB.keys())
+    ignore_unused(local_tj)
 
-    for id_ in ids:
-        local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
+    request_ids = list(REAL_IDS.values())
 
     download_from_json(
-        ids=ids,
+        ids=request_ids,
         sink=results_sink,
         cache_path=CACHE_PATH,
     )
 
     data = retrieve_data(results_sink)
 
-    assert data == list(MOCK_DB.values())
+    has_same_entries(data, list(MOCK_DB.values()))
 
 
 def test_download_in_parts_without_overlap(local_tj, results_sink):
     """Tests if download function works when given ID ranges don't overlap/repeat."""
-    ids = list(MOCK_DB.keys())
+    ignore_unused(local_tj)
 
-    request_order = [ids[:1], ids[1:]]
+    request_ids = list(REAL_IDS.values())
 
-    for id_ in flatten(request_order):
-        local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
+    request_order = [request_ids[:1], request_ids[1:]]
 
     for request_ids in request_order:
         download_from_json(ids=request_ids, cache_path=CACHE_PATH, sink=results_sink)
@@ -142,9 +151,9 @@ def test_download_in_parts_without_overlap(local_tj, results_sink):
 
 def test_download_in_parts_with_overlap(local_tj, results_sink):
     """Tests if download function works when given ID ranges overlap/repeat."""
-    ids = list(MOCK_DB.keys())
+    ignore_unused(local_tj)
 
-    request_order = [ids[:2], ids[1:]]
+    request_ids = list(REAL_IDS.values())
 
     for id_ in flatten(request_order):
         local_tj.post(LOCAL_URL, payload=MOCK_DB[id_])
@@ -163,9 +172,11 @@ def test_download_with_subject_filter_one_word(local_tj, results_sink):
     Tests if download function is able to filter only items that contains one
     specific word on their subjects.
     """
+    ignore_unused(local_tj)
+
     # FIXME: This test actually doesn't filter subjects with `processes_with_subject`.
     expected = {k: v for k, v in MOCK_DB.items() if has_words_in_subject(v, ["furto"])}
-    ids = list(expected.keys())
+    ids = [REAL_IDS[key] for key in expected.keys()]
     expected_values = sorted(expected.values(), key=get_db_id)
 
     for id_ in ids:
@@ -175,7 +186,7 @@ def test_download_with_subject_filter_one_word(local_tj, results_sink):
 
     data = retrieve_data(results_sink)
 
-    assert data == expected_values
+    assert has_same_entries(data, expected_values)
 
 
 def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
@@ -183,12 +194,14 @@ def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
     Tests if download function is able to filter only items that contains some
     specific words on their subjects.
     """
+    ignore_unused(local_tj)
+
     expected = {
         k: v
         for k, v in MOCK_DB.items()
         if has_words_in_subject(v, ["furto", "receptação"])
     }
-    ids = list(expected.keys())
+    ids = [REAL_IDS[key] for key in expected.keys()]
     expected_values = sorted(expected.values(), key=get_db_id)
 
     for id_ in ids:
@@ -198,15 +211,17 @@ def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
 
     data = retrieve_data(results_sink)
 
-    assert data == expected_values
+    assert has_same_entries(data, expected_values)
 
 
 def test_processes_by_subject_one_is_invalid(local_tj, results_sink):
     """
     Tests if `processes_with_subject` properly handles invalid IDs.
     """
+    ignore_unused(local_tj)
+
     expected = {
-        REALISTIC_IDS[k]: v
+        REAL_IDS[k]: v
         for k, v in MOCK_DB.items()
         if v.get("txtAssunto") is not None
     }
@@ -218,7 +233,7 @@ def test_processes_by_subject_one_is_invalid(local_tj, results_sink):
             expected = ["Número do processo inválido."]
         local_tj.post(LOCAL_URL, payload=expected)
 
-    ids = (REALISTIC_IDS[min(ids)], REALISTIC_IDS[max(ids)])
+    ids = (REAL_IDS[min(ids)], REAL_IDS[max(ids)])
 
     processes_by_subject(
         id_range=ids,
@@ -230,7 +245,7 @@ def test_processes_by_subject_one_is_invalid(local_tj, results_sink):
 
     data = retrieve_data(results_sink)
 
-    assert data == expected_values
+    assert has_same_entries(data, expected_values)
 
 
 def test_processes_by_subject_with_one_word(local_tj, results_sink):
@@ -238,8 +253,10 @@ def test_processes_by_subject_with_one_word(local_tj, results_sink):
     Like `test_download_with_subject_filter_one_word`, but by calling
     `processes_with_subject`.
     """
+    ignore_unused(local_tj)
+
     expected = {
-        REALISTIC_IDS[k]: v
+        REAL_IDS[k]: v
         for k, v in MOCK_DB.items()
         if has_words_in_subject(v, ["furto"])
     }
@@ -249,7 +266,7 @@ def test_processes_by_subject_with_one_word(local_tj, results_sink):
     for process in MOCK_DB.values():
         local_tj.post(LOCAL_URL, payload=process)
 
-    ids = (REALISTIC_IDS[min(ids)], REALISTIC_IDS[max(ids)])
+    ids = (REAL_IDS[min(ids)], REAL_IDS[max(ids)])
 
     processes_by_subject(
         id_range=ids,
@@ -261,7 +278,7 @@ def test_processes_by_subject_with_one_word(local_tj, results_sink):
 
     data = retrieve_data(results_sink)
 
-    assert data == expected_values
+    assert has_same_entries(data, expected_values)
 
 
 def test_download_same_processes_twice(local_tj, results_sink):
@@ -288,10 +305,11 @@ def test_download_same_processes_twice(local_tj, results_sink):
             else ["Número do processo inválido."]
         )
         return CallbackResult(status=200, payload=payload)
+    ignore_unused(local_tj)
 
     for curr_step in range(2):
         expected = {
-            REALISTIC_IDS[k]: v
+            REAL_IDS[k]: v
             for k, v in MOCK_DB.items()
             if has_words_in_subject(v, ["furto"])
         }
@@ -300,7 +318,7 @@ def test_download_same_processes_twice(local_tj, results_sink):
 
         local_tj.post(LOCAL_URL, callback=callback, repeat=True)
 
-        ids = (REALISTIC_IDS[min(ids)], REALISTIC_IDS[max(ids)])
+        ids = (REAL_IDS[min(ids)], REAL_IDS[max(ids)])
 
         processes_by_subject(
             id_range=ids,
@@ -314,4 +332,4 @@ def test_download_same_processes_twice(local_tj, results_sink):
         data = retrieve_data(results_sink)
         data = sorted(list(data), key=get_db_id)
 
-        assert data == expected_values
+        assert has_same_entries(data, expected_values)

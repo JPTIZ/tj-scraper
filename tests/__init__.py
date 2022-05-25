@@ -6,7 +6,7 @@ CACHE_PATH = Path("cache_tests.db")
 LOCAL_URL = (
     "https://www3.tjrj.jus.br/consultaprocessual/api/processos/por-numero/publica"
 )
-REALISTIC_IDS = {
+REAL_IDS = {
     "1": "2021.001.150000-1",
     "2": "2021.001.150000-2",
     "3": "2021.001.150000-3",
@@ -15,7 +15,7 @@ MOCK_DB = {
     "1": {
         "cidade": "Rio de Janeiro",
         "codCnj": "0000000-11.2021.4.55.6666",
-        "codProc": REALISTIC_IDS["1"],
+        "codProc": REAL_IDS["1"],
         "dataDis": "01/01/2021",
         "idProc": "1",
         "txtAssunto": "Furto  (Art. 155 - CP)",
@@ -36,11 +36,11 @@ MOCK_DB = {
     },
     "2": {
         "idProc": "2",
-        "codProc": REALISTIC_IDS["2"],
+        "codProc": REAL_IDS["2"],
     },
     "3": {
         "idProc": "3",
-        "codProc": REALISTIC_IDS["3"],
+        "codProc": REAL_IDS["3"],
         "txtAssunto": "Furto (Art. 155 - CP), § 1º E Receptação (Art. 180 - Cp)",
     },
     # "4": {

@@ -4,6 +4,11 @@ from pathlib import Path
 import pytest
 
 
+def ignore_unused(*args, reason="Pyright emmits an info that LSP is not able to ignore."):
+    """Shuts up language-servers' warnings about an unused variable/function/fixture."""
+    _ = args, reason
+
+
 @pytest.fixture(autouse=True)
 def cache_db():
     """
