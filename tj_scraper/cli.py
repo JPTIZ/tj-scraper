@@ -129,7 +129,9 @@ def make_app():
         )
 
     @app.command()
-    def webapp() -> None:
+    def webapp(
+        cache_file: Path = Path("webapp_cache.db"),
+    ) -> None:
         try:
             from tj_scraper.webapp import make_webapp
         except ImportError as error:
@@ -145,6 +147,6 @@ def make_app():
             )
             raise Exit(1) from error
 
-        make_webapp().run()
+        make_webapp(cache_path=cache_file).run()
 
     return app

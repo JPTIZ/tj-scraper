@@ -9,3 +9,4 @@ items.json
 results
 samples/
 dist
+*.db

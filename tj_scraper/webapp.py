@@ -3,17 +3,45 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
 
-from .cache import jsonl_reader
+from .process import all_from
+from .cache import jsonl_reader, restore
 
 
-def make_webapp(cache_path=Path("webapp_cache.db")):
+def make_intervals(known_ids: list[str]) -> list[tuple[str, str]]:
+    """
+    Creates a list of (start, end) intervals of sequential IDs in `known_ids`.
+    """
+    intervals = []
+    start, end = min(known_ids), max(known_ids)
+    interval_start, interval_end = start, start
+    started_sequence = True
+    for id_ in all_from((start, end)):
+        if id_ in known_ids:
+            if not started_sequence:
+                interval_start = id_
+            interval_end = id_
+            started_sequence = True
+        else:
+            if started_sequence:
+                intervals.append((interval_start, interval_end))
+            started_sequence = False
+
+    if started_sequence:
+        intervals.append((interval_start, interval_end))
+
+    print(f"{intervals=}")
+    return intervals
+
+
+def make_webapp(cache_path=Path("cache.db")):
     """Creates the tj_scraper flask application."""
     # pylint: disable=redefined-outer-name
     app = Flask(__name__)
 
     @app.route("/")
     def root():
-        return render_template("mainpage.html")
+        known_ids = [str(item["codProc"]) for item in restore(cache_path)]
+        return render_template("mainpage.html", intervals=make_intervals(known_ids))
 
     @app.route("/buscar", methods=["GET"])
     def search():
