@@ -1,62 +1,23 @@
 """A web application front/backend for the library's operations."""
-from flask import Flask, jsonify, request, send_file
+from pathlib import Path
 
+from flask import Flask, jsonify, render_template, request, send_file
 
 from .cache import jsonl_reader
 
 
-def make_webapp():
+def make_webapp(cache_path=Path("webapp_cache.db")):
     """Creates the tj_scraper flask application."""
     # pylint: disable=redefined-outer-name
     app = Flask(__name__)
 
     @app.route("/")
     def root():
-        return """
-            <h1>Extrator de dados de TJs</h1>
-
-            <h3>Sobre</h3>
-
-            Esta é uma ferramenta para permitir buscar, através de filtros
-            personalizados, dados de processos dos Tribunais de Justiça do
-            Brasil.
-
-            <h3>Baixar dados</h3>
-            <form action="/buscar" action="GET">
-                Intervalo de processos:<br>
-
-                <label for="intervalo_inicio">Início:</label>
-                <input type="text"
-                    name="intervalo_inicio"
-                    placeholder="Ex: 2021.001.149800-0"
-                ><br>
-
-                <label for="intervalo_fim">Fim:</label>
-                <input type="text"
-                    name="intervalo_fim"
-                    placeholder="Ex: 2021.001.149899-9"
-                ><br>
-
-                <label for="assunto">Assunto:</label>
-                <input type="text"
-                    name="assunto"
-                    placeholder="Ex: Furto"
-                ><br>
-
-                <label for="tipo_download">Baixar como:</label>
-                <select name="tipo_download">
-                    <option value="xlsx" selected>Planilha XLSX</option>
-                    <option value="json">JSON</option>
-                </select>
-
-                <input type="submit" value="Buscar">
-            </form>
-        """
+        return render_template("mainpage.html")
 
     @app.route("/buscar", methods=["GET"])
     def search():
         # pylint: disable=too-many-locals
-        from pathlib import Path
         from tj_scraper.download import (
             download_all_from_range,
             download_from_json,
@@ -74,6 +35,7 @@ def make_webapp():
 
         start = str(start_arg)
         end = str(end_arg)
+        subject = ""
 
         from tempfile import NamedTemporaryFile
 
@@ -81,14 +43,19 @@ def make_webapp():
             sink_file = Path(sink.name)
             match request.args:
                 case {"assunto": subject}:
+                    print(f"Com assunto, {subject=}")
                     processes_by_subject(
                         (start, end),
                         words=subject.split(),
                         download_function=download_from_json,
                         output=sink_file,
+                        cache_path=cache_path,
                     )
                 case _:
-                    download_all_from_range((start, end), sink_file, Path("cache.db"))
+                    print(f"{subject=}")
+                    download_all_from_range(
+                        (start, end), sink_file, cache_path=cache_path
+                    )
 
             sink.seek(0)
 
@@ -108,7 +75,7 @@ def make_webapp():
                 with NamedTemporaryFile() as xlsx_file:
                     from tj_scraper.export import export_to_xlsx
 
-                    export_to_xlsx(data, xlsx_file.name)
+                    export_to_xlsx(data, Path(xlsx_file.name))
                     xlsx_file.seek(0)
                     return send_file(xlsx_file.name, attachment_filename=filename)
 

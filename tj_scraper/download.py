@@ -66,6 +66,7 @@ def download_from_json(
         if not filter_function(data):
             subject = data.get("txtAssunto", "Sem Assunto")
             print(f"{id_}: Filtered  -- ({subject}) -- Cached now")
+            save_to_cache(data, cache_path, state=CacheState.CACHED)
             return "Filtered"
 
         from tj_scraper.cache import restore_ids
@@ -205,7 +206,12 @@ def processes_by_subject(
     from .cache import filter_cached
     from .timing import report_time
 
-    print(f"Filtering by: {words}")
+    if words:
+        print(f"Filtering by: {words}")
+        filter_function = lambda item: has_words_in_subject(item, list(words))
+    else:
+        print("Empty 'words'. Word filtering will not be applied.")
+        filter_function = lambda _: True
 
     all_from_range = set(all_from(id_range))
     (ids, cached_ids), _ = report_time(
@@ -239,6 +245,6 @@ def processes_by_subject(
         ids,
         output,
         cache_path,
-        filter_function=lambda item: has_words_in_subject(item, list(words)),
+        filter_function=filter_function,
         download_function=download_function,
     )

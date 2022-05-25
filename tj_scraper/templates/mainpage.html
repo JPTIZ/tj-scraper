@@ -1,0 +1,47 @@
+<h1>Extrator de dados de TJs</h1>
+
+<h3>Sobre</h3>
+
+Esta é uma ferramenta para permitir buscar, através de filtros
+personalizados, dados de processos dos Tribunais de Justiça do
+Brasil.
+
+<h3>Baixar dados</h3>
+<form action="/buscar" action="GET">
+    Intervalo de processos:<br>
+
+    <label for="intervalo_inicio">Início:</label>
+    <input type="text"
+        name="intervalo_inicio"
+        placeholder="Ex: 2021.001.149800-0"
+    ><br>
+
+    <label for="intervalo_fim">Fim:</label>
+    <input type="text"
+        name="intervalo_fim"
+        placeholder="Ex: 2021.001.149899-9"
+    ><br>
+
+    <label for="assunto">Assunto:</label>
+    <input type="text"
+        name="assunto"
+        placeholder="Ex: Furto"
+    ><br>
+
+    <label for="tipo_download">Baixar como:</label>
+    <select name="tipo_download">
+        <option value="xlsx" selected>Planilha XLSX</option>
+        <option value="json">JSON</option>
+    </select>
+
+    <input type="submit" value="Buscar">
+</form>
+
+<h3>Intervalos conhecidos</h3>
+
+<table style="border: solid 1px black; padding: 1em">
+    <th><td>Início</td><td>Fim</td></th>
+    {% for start, end in intervals %}
+    <tr><td>{{ start }}</td><td>{{ end }}</td></tr>
+    {% endfor %}
+<table>
