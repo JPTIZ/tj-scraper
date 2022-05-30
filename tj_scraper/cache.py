@@ -222,3 +222,36 @@ def filter_cached(ids: list[str], cache_path: Path) -> tuple[set[str], set[str]]
     filtered_ids = set(ids) - cached_ids
 
     return filtered_ids, cached_ids
+
+
+def show_cache_state(cache_path: Path):
+    """Shows current cache state when a test fails."""
+
+    def load_all(cache_path: Path):
+        """Loads entire database content. For small DBs only (e.g. testing)."""
+        import json
+        import sqlite3
+
+        with sqlite3.connect(cache_path) as connection:
+            cursor = connection.cursor()
+
+            return [
+                (id_, cache_state, assunto, json.loads(item_json))
+                for id_, cache_state, assunto, item_json, in cursor.execute(
+                    "select id, cache_state, assunto, json from Processos",
+                )
+            ]
+        return []
+
+    from pprint import pprint
+
+    print("Cache state:")
+    try:
+        state = {
+            i: {"ID": i, "CacheState": s, "Assunto": a}
+            for (i, s, a, _) in load_all(cache_path=cache_path)
+        }
+        pprint(state)
+    except Exception as error:  # pylint: disable=broad-except
+        print(" [ Failed to fetch cache state. ]")
+        print(f" [ Reason: {error}. ]")

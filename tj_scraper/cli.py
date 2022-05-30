@@ -147,6 +147,7 @@ def make_app():
             )
             raise Exit(1) from error
 
+        print("Starting webapp...")
         make_webapp(cache_path=cache_file).run()
 
     return app

@@ -5,16 +5,17 @@ from typing import Any, Callable
 
 import jsonlines
 
-from .cache import save_to_cache, restore, CacheState
+from .cache import filter_cached, save_to_cache, restore, restore_ids, CacheState
 from .process import (
     DB_FIELD,
     IdRange,
+    Process,
     REAL_ID_FIELD,
     all_from,
-    get_db_id,
     get_real_id,
     has_words_in_subject,
 )
+from .timing import report_time
 
 
 FilterFunction = Callable[[dict[str, Any]], bool]
@@ -27,6 +28,41 @@ BASE_URLS = {
 }
 
 
+def write_to_sink(items: list[Process], sink: Path, reason: str):
+    """
+    A quick wrapper to write all data into a sink file while reporting about
+    it.
+    """
+    with jsonlines.open(sink, "a") as output_f:
+        print(
+            f"Writing {[get_real_id(item) for item in items]}\n"
+            f"  -> Total items: {len(items)}.\n"
+            f"  -> Reason: {reason}."
+        )
+        output_f.write_all(items)  # type: ignore
+
+
+def write_cached_to_sink(ids: list[str], sink: Path, cache_path: Path):
+    """
+    Write only items with given IDs that are cached into the sink and returns
+    which are not and which are cached.
+    """
+    filtered, _ = report_time(filter_cached, ids, cache_path=cache_path)
+
+    def to_list(constructor):
+        return lambda items: [constructor(item) for item in items]
+
+    ids, cached_ids = map(to_list(str), filtered)
+
+    cached_items = restore_ids(cache_path, list(cached_ids))
+
+    print(f"Cached_ids: {cached_ids}")
+
+    write_to_sink(cached_items, sink=sink, reason="Cached")
+
+    return ids, cached_ids
+
+
 def download_from_json(
     ids: list[str],
     sink: Path,
@@ -35,11 +71,18 @@ def download_from_json(
     filter_function: FilterFunction = lambda _: True,
     # pylint: disable=dangerous-default-value
     base_urls: dict[str, str] = BASE_URLS,
+    force_fetch: bool = False,
 ):
-    """Downloads data from urls that return JSON values."""
+    """
+    Downloads data from urls that return JSON values. Previously cached results
+    are used by default if `force_fetch` is not set to `True`.
+    """
     import aiohttp
     import asyncio
     import json
+
+    if not force_fetch:
+        ids, _ = write_cached_to_sink(ids=ids, sink=sink, cache_path=cache_path)
 
     # pylint: disable=invalid-name
     async def fetch_process(session: aiohttp.ClientSession, id_: str, uf: str):
@@ -73,7 +116,7 @@ def download_from_json(
 
         if not filter_function(data):
             subject = data.get("txtAssunto", "Sem Assunto")
-            print(f"{id_}: Filtered  -- ({subject}) -- Cached now")
+            print(f"{id_}: Filtered  -- ({subject}) -- Cached now ({data=})")
             save_to_cache(data, cache_path, state=CacheState.CACHED)
             return "Filtered"
 
@@ -111,11 +154,7 @@ def download_from_json(
                     item for item in data if item is not None and item != "Filtered"
                 ]
 
-                with jsonlines.open(sink, mode="a") as sink_f:
-                    print(
-                        f"Writing {[get_real_id(item) for item in data]}\n  -> Reason: Fetched."
-                    )
-                    sink_f.write_all(data)  # type: ignore
+                write_to_sink(data, sink, reason="Fetched")
 
                 partial_ids = [get_real_id(item) for item in data]
 
@@ -132,8 +171,8 @@ def download_from_json(
         Finished.
             Ellapsed time:      {ellapsed:.2f}s
             Request count:      {total}
-            Time/Request (avg): {ellapsed / total:.2f}s
-    """
+            Time/Request (avg): {ellapsed / max(total, 1):.2f}s
+        """
     )
 
 
@@ -202,9 +241,6 @@ def processes_by_subject(
     cache_path: Path = Path("results") / "cache.db",
 ):
     """Search for processes that contain the given words on its subject."""
-    from .cache import filter_cached
-    from .timing import report_time
-
     if words:
         print(f"Filtering by: {words}")
         filter_function = lambda item: has_words_in_subject(item, list(words))
@@ -228,14 +264,7 @@ def processes_by_subject(
     if not cached_processes:
         print(f"No cached processes for given ID Range ({id_range}).")
 
-    # TODO: Make a `write_to_sink([items], sink: Path)` function
-    with jsonlines.open(output, "w") as output_f:
-        print(
-            f"Writing {[(get_db_id(item), get_real_id(item)) for item in cached_processes]}\n"
-            f"  -> Total items: {len(cached_processes)}."
-            "  -> Reason: Cached."
-        )
-        output_f.write_all(cached_processes)  # type: ignore
+    write_to_sink(cached_processes, sink=output, reason="Cached")
 
     for filtered_id in set(all_from_range) - set(ids):
         print(f"Ignoring {filtered_id} -- Cached")

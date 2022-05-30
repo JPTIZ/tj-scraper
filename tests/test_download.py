@@ -28,7 +28,7 @@ def show_cache_state(request):
                 i: {"ID": i, "CacheState": s, "Assunto": a, "JSON": v}
                 for (i, s, a, v) in load_all(cache_path=CACHE_PATH)
             }
-            pprint(state)
+            pprint(state, depth=3)
         except Exception as error:  # pylint: disable=broad-except
             print(" [ Failed to fetch cache state. ]")
             print(f" [ Reason: {error}. ]")
@@ -149,6 +149,7 @@ def test_download_all_ids(local_tj, results_sink):
     has_same_entries(data, list(MOCK_DB.values()))
 
 
+@pytest.mark.xfail(reason="Need to decide if sink should have only unique data")
 def test_download_in_parts_without_overlap(local_tj, results_sink):
     """Tests if download function works when given ID ranges don't overlap/repeat."""
     ignore_unused(local_tj)
@@ -308,6 +309,8 @@ def test_download_same_processes_twice(local_tj, results_sink):
         data = retrieve_data(results_sink)
 
         assert has_same_entries(data, expected_values)
+
+        results_sink.unlink(missing_ok=True)
 
 
 def test_download_processes_by_subject_with_empty_subject(local_tj, results_sink):
