@@ -11,7 +11,7 @@ from tj_scraper.download import download_from_json, processes_by_subject
 from tj_scraper.process import has_words_in_subject, get_db_id
 
 from . import CACHE_PATH, LOCAL_URL, MOCK_DB, REAL_IDS
-from .conftest import ignore_unused
+from .conftest import ignore_unused, reverse_lookup
 
 
 @pytest.fixture(autouse=True)
@@ -49,14 +49,6 @@ def load_all(cache_path: Path):
             )
         ]
     return []
-
-
-def reverse_lookup(dict_, value):
-    """Returns which key has a certain value."""
-    for key, value_ in dict_.items():
-        if value_ == value:
-            return key
-    return None
 
 
 @pytest.fixture()
@@ -170,7 +162,7 @@ def test_download_in_parts_without_overlap(local_tj, results_sink):
 
     data = retrieve_data(results_sink)
 
-    assert data == list(MOCK_DB.values())
+    assert has_same_entries(data, MOCK_DB.values())
 
 
 def test_download_in_parts_with_overlap(local_tj, results_sink):
@@ -187,7 +179,7 @@ def test_download_in_parts_with_overlap(local_tj, results_sink):
     data = retrieve_data(results_sink)
     expected = list(MOCK_DB.values())
 
-    assert data == expected
+    assert has_same_entries(data, expected)
 
 
 def test_download_with_subject_filter_one_word(local_tj, results_sink):
@@ -217,11 +209,11 @@ def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
     ignore_unused(local_tj)
 
     expected = {
-        k: v
-        for k, v in MOCK_DB.items()
+        v["codProc"]: v
+        for _, v in MOCK_DB.items()
         if has_words_in_subject(v, ["furto", "receptação"])
     }
-    ids = [REAL_IDS[key] for key in expected.keys()]
+    ids = list(expected.keys())
     expected_values = sorted(expected.values(), key=get_db_id)
 
     download_from_json(ids=ids, cache_path=CACHE_PATH, sink=results_sink)
@@ -243,7 +235,7 @@ def test_processes_by_subject_one_is_invalid(local_tj, results_sink):
     ids = [get_db_id(v) for v in expected.values()]
     expected_values = sorted(expected.values(), key=get_db_id)
 
-    ids = (REAL_IDS[min(ids)], REAL_IDS[max(ids)])
+    ids = min(ids), max(ids)
 
     processes_by_subject(
         id_range=ids,
@@ -271,7 +263,7 @@ def test_processes_by_subject_with_one_word(local_tj, results_sink):
     ids = [get_db_id(v) for v in expected.values()]
     expected_values = sorted(expected.values(), key=get_db_id)
 
-    ids = (REAL_IDS[min(ids)], REAL_IDS[max(ids)])
+    ids = min(ids), max(ids)
 
     processes_by_subject(
         id_range=ids,
@@ -302,7 +294,7 @@ def test_download_same_processes_twice(local_tj, results_sink):
         ids = [get_db_id(v) for v in expected.values()]
         expected_values = sorted(expected.values(), key=get_db_id)
 
-        ids = (REAL_IDS[min(ids)], REAL_IDS[max(ids)])
+        ids = min(ids), max(ids)
 
         processes_by_subject(
             id_range=ids,
@@ -329,7 +321,7 @@ def test_download_processes_by_subject_with_empty_subject(local_tj, results_sink
     ids = [get_db_id(v) for v in expected.values()]
     expected_values = sorted(expected.values(), key=get_db_id)
 
-    ids = (REAL_IDS[min(ids)], REAL_IDS[max(ids)])
+    ids = min(ids), max(ids)
 
     processes_by_subject(
         id_range=ids,

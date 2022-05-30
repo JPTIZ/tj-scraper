@@ -11,6 +11,14 @@ def ignore_unused(
     _ = args, reason
 
 
+def reverse_lookup(dict_, value):
+    """Returns which key has a certain value."""
+    for key, value_ in dict_.items():
+        if value_ == value:
+            return key
+    return None
+
+
 @pytest.fixture(autouse=True)
 def cache_db():
     """

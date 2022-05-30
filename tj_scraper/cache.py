@@ -8,7 +8,7 @@ import sqlite3
 import jsonlines
 
 
-from .process import Process, get_db_id
+from .process import Process, get_db_id, get_real_id
 
 
 class CacheState(Enum):
@@ -43,12 +43,32 @@ def create_database(path: Path):
         )
 
 
+def quickfix_db_id_to_real_id(cache_path: Path):
+    """."""
+    data = restore(cache_path)
+
+    with sqlite3.connect(cache_path) as connection:
+        cursor = connection.cursor()
+        for item in data:
+            cursor.execute(
+                """
+                update Processos
+                set id = ?
+                where id = ?
+                """,
+                (
+                    get_real_id(item),
+                    get_db_id(item),
+                ),
+            )
+
+
 def save_to_cache(item: Process, cache_path: Path, state=CacheState.CACHED):
     """Caches (saves) an item into a database of known items."""
     if not cache_path.exists():
         create_database(cache_path)
 
-    item_db_id = get_db_id(item)
+    item_db_id = get_real_id(item)
 
     if restore_ids(cache_path, ids=[item_db_id]):
         return
@@ -63,7 +83,7 @@ def save_to_cache(item: Process, cache_path: Path, state=CacheState.CACHED):
             values(?, ?, ?, ?)
             """,
             (
-                item_db_id,
+                item_db_id,  # TODO: Use ONLY real ID for storage. DB ID is solely for TJRJ's DB.
                 state.value,
                 item.get("txtAssunto"),
                 json.dumps(item),

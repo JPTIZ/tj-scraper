@@ -77,15 +77,6 @@ def download_from_json(
             save_to_cache(data, cache_path, state=CacheState.CACHED)
             return "Filtered"
 
-        from tj_scraper.cache import restore_ids
-
-        try:
-            if restore_ids(cache_path, [get_db_id(data)]):
-                print(f"{id_}: Cached -- not included")
-                return
-        except FileNotFoundError:
-            pass
-
         save_to_cache(data, cache_path, state=CacheState.CACHED)
 
         fields = data.keys() if fetch_all_fields else [DB_FIELD, REAL_ID_FIELD]
