@@ -113,6 +113,12 @@ def download_from_json(
                     state=CacheState.INVALID,
                 )
                 return
+            case {
+                "status": 412,
+                "mensagem": "Erro de validação do Recaptcha. Tente novamente.",
+            }:
+                print(f"{id_}: Unfetched, failed on recaptcha.")
+                return
 
         if not filter_function(data):
             subject = data.get("txtAssunto", "Sem Assunto")

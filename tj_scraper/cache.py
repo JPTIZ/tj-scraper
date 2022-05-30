@@ -230,7 +230,6 @@ def show_cache_state(cache_path: Path):
     def load_all(cache_path: Path):
         """Loads entire database content. For small DBs only (e.g. testing)."""
         import json
-        import sqlite3
 
         with sqlite3.connect(cache_path) as connection:
             cursor = connection.cursor()
