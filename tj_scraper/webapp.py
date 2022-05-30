@@ -14,9 +14,10 @@ def make_intervals(known_ids: list[str]) -> list[tuple[str, str]]:
     intervals = []
     start, end = min(known_ids), max(known_ids)
     interval_start, interval_end = start, start
+    known_ids_set = set(known_ids)
     started_sequence = True
     for id_ in all_from((start, end)):
-        if id_ in known_ids:
+        if id_ in known_ids_set:
             if not started_sequence:
                 interval_start = id_
             interval_end = id_
@@ -37,14 +38,38 @@ def make_webapp(cache_path=Path("cache.db")):
     """Creates the tj_scraper flask application."""
     # pylint: disable=redefined-outer-name
     app = Flask(__name__)
+    # from tj_scraper.cache import quickfix_db_id_to_real_id
+    # quickfix_db_id_to_real_id(cache_path)
+    from tj_scraper.timing import report_time
 
     @app.route("/")
-    def root():
+    def _root():  # type: ignore
         known_ids = [str(item["codProc"]) for item in restore(cache_path)]
-        return render_template("mainpage.html", intervals=make_intervals(known_ids))
+        intervals, _ = report_time(make_intervals, known_ids)
+
+        import json
+
+        range_files = Path("id_ranges.json")
+        print(f"Loading known ids")
+        if range_files.exists():
+            print(f"Loading predefined intervals...")
+            with open(range_files) as file_:
+                intervals = json.load(file_)
+        elif cache_path.exists():
+            known_ids = [
+                str(item.get("codProc", item["idProc"])) for item in restore(cache_path)
+            ]
+            print(f"Making intervals...")
+            intervals = make_intervals(known_ids)
+            with open(range_files, "w") as file_:
+                json.dump(intervals, file_)
+        else:
+            print("No cache file found. No intervals then...")
+            intervals = []
+        return render_template("mainpage.html", intervals=intervals)
 
     @app.route("/buscar", methods=["GET"])
-    def search():
+    def _search():
         # pylint: disable=too-many-locals
         from tj_scraper.download import (
             download_all_from_range,
