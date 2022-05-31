@@ -10,3 +10,4 @@ results
 samples/
 dist
 *.db
+id_ranges.json
