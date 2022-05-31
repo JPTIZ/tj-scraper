@@ -29,7 +29,7 @@ def flatten(process: Process) -> dict[str, str]:
     if not process:
         return {}
     result |= {
-        "ID do Processo": str(process.pop("idProc")),
+        "ID do Processo": str(process.pop("codProc")),
         "Assunto": str(process.get("txtAssunto", "Sem Assunto")),
     }
     print(f"Flattening {result['ID do Processo']}")
@@ -93,7 +93,6 @@ def prepare_to_export(raw_data: Collection[Process]) -> list[Object]:
             "codCnj",
             "codProc",
             "dataDis",
-            "idProc",
             "personagens",
             "txtAssunto",
             "uf",

@@ -8,7 +8,7 @@ from aioresponses import aioresponses, CallbackResult
 import pytest
 
 from tj_scraper.download import download_from_json, processes_by_subject
-from tj_scraper.process import has_words_in_subject, get_db_id
+from tj_scraper.process import has_words_in_subject, get_process_id
 
 from . import CACHE_PATH, LOCAL_URL, MOCK_DB, REAL_IDS
 from .conftest import ignore_unused, reverse_lookup
@@ -94,7 +94,7 @@ def has_same_entries(lhs, rhs):
     Checks if `lhs` and `rhs` contain the same entries even if they're on
     different positions.
     """
-    assert sorted(list(lhs), key=get_db_id) == sorted(list(rhs), key=get_db_id)  # type: ignore
+    assert sorted(list(lhs), key=get_process_id) == sorted(list(rhs), key=get_process_id)  # type: ignore
     return True
 
 
@@ -193,7 +193,7 @@ def test_download_with_subject_filter_one_word(local_tj, results_sink):
     # FIXME: This test actually doesn't filter subjects with `processes_with_subject`.
     expected = {k: v for k, v in MOCK_DB.items() if has_words_in_subject(v, ["furto"])}
     ids = [REAL_IDS[key] for key in expected.keys()]
-    expected_values = sorted(expected.values(), key=get_db_id)
+    expected_values = sorted(expected.values(), key=get_process_id)
 
     download_from_json(ids=ids, cache_path=CACHE_PATH, sink=results_sink)
 
@@ -215,7 +215,7 @@ def test_download_with_subject_filter_multiple_word(local_tj, results_sink):
         if has_words_in_subject(v, ["furto", "receptação"])
     }
     ids = list(expected.keys())
-    expected_values = sorted(expected.values(), key=get_db_id)
+    expected_values = sorted(expected.values(), key=get_process_id)
 
     download_from_json(ids=ids, cache_path=CACHE_PATH, sink=results_sink)
 
@@ -233,8 +233,8 @@ def test_processes_by_subject_one_is_invalid(local_tj, results_sink):
     expected = {
         REAL_IDS[k]: v for k, v in MOCK_DB.items() if v.get("txtAssunto") is not None
     }
-    ids = [get_db_id(v) for v in expected.values()]
-    expected_values = sorted(expected.values(), key=get_db_id)
+    ids = [get_process_id(v) for v in expected.values()]
+    expected_values = sorted(expected.values(), key=get_process_id)
 
     ids = min(ids), max(ids)
 
@@ -261,8 +261,8 @@ def test_processes_by_subject_with_one_word(local_tj, results_sink):
     expected = {
         REAL_IDS[k]: v for k, v in MOCK_DB.items() if has_words_in_subject(v, ["furto"])
     }
-    ids = [get_db_id(v) for v in expected.values()]
-    expected_values = sorted(expected.values(), key=get_db_id)
+    ids = [get_process_id(v) for v in expected.values()]
+    expected_values = sorted(expected.values(), key=get_process_id)
 
     ids = min(ids), max(ids)
 
@@ -292,8 +292,8 @@ def test_download_same_processes_twice(local_tj, results_sink):
             for k, v in MOCK_DB.items()
             if has_words_in_subject(v, ["furto"])
         }
-        ids = [get_db_id(v) for v in expected.values()]
-        expected_values = sorted(expected.values(), key=get_db_id)
+        ids = [get_process_id(v) for v in expected.values()]
+        expected_values = sorted(expected.values(), key=get_process_id)
 
         ids = min(ids), max(ids)
 
@@ -321,8 +321,8 @@ def test_download_processes_by_subject_with_empty_subject(local_tj, results_sink
     ignore_unused(local_tj)
 
     expected = {REAL_IDS[k]: v for k, v in MOCK_DB.items()}
-    ids = [get_db_id(v) for v in expected.values()]
-    expected_values = sorted(expected.values(), key=get_db_id)
+    ids = [get_process_id(v) for v in expected.values()]
+    expected_values = sorted(expected.values(), key=get_process_id)
 
     ids = min(ids), max(ids)
 

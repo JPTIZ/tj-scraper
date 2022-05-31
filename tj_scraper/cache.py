@@ -1,14 +1,13 @@
 """Deals with cache-related features."""
+import sqlite3
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Optional
-import sqlite3
 
 import jsonlines
 
-
-from .process import Process, get_db_id, get_real_id
+from .process import Process, get_process_id
 
 
 class CacheState(Enum):
@@ -57,8 +56,8 @@ def quickfix_db_id_to_real_id(cache_path: Path):
                 where id = ?
                 """,
                 (
-                    get_real_id(item),
-                    get_db_id(item),
+                    get_process_id(item),
+                    item.get("idProc", item["codProc"]),
                 ),
             )
 
@@ -68,7 +67,7 @@ def save_to_cache(item: Process, cache_path: Path, state=CacheState.CACHED):
     if not cache_path.exists():
         create_database(cache_path)
 
-    item_db_id = get_real_id(item)
+    item_db_id = get_process_id(item)
 
     if restore_ids(cache_path, ids=[item_db_id]):
         return

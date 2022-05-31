@@ -5,11 +5,7 @@ from typing import Optional
 
 from typer import Argument, Exit, Option, Typer
 
-from .download import (
-    download_from_html,
-    download_from_json,
-    processes_by_subject,
-)
+from .download import download_from_html, download_from_json, processes_by_subject
 from .process import id_or_range
 
 
@@ -48,6 +44,7 @@ def make_app():
         """Exporta os dados para uma planilha XLSX."""
         print(f"Exporting {input_} to {output}")
         import jsonlines
+
         from .export import export_to_xlsx
 
         with jsonlines.open(input_) as reader:

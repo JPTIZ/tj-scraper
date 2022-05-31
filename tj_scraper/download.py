@@ -1,22 +1,22 @@
 """Responsible for handling data downloading."""
+import json
 from collections.abc import Collection
 from pathlib import Path
 from typing import Any, Callable
 
+import aiohttp
 import jsonlines
 
-from .cache import filter_cached, save_to_cache, restore, restore_ids, CacheState
+from .cache import CacheState, filter_cached, restore, restore_ids, save_to_cache
 from .process import (
-    DB_FIELD,
+    REAL_ID_FIELD,
     IdRange,
     Process,
-    REAL_ID_FIELD,
     all_from,
-    get_real_id,
+    get_process_id,
     has_words_in_subject,
 )
 from .timing import report_time
-
 
 FilterFunction = Callable[[dict[str, Any]], bool]
 DownloadFunction = Callable[[list[str], Path, Path, bool, FilterFunction], None]
@@ -35,7 +35,7 @@ def write_to_sink(items: list[Process], sink: Path, reason: str):
     """
     with jsonlines.open(sink, "a") as output_f:
         print(
-            f"Writing {[get_real_id(item) for item in items]}\n"
+            f"Writing {[get_process_id(item) for item in items]}\n"
             f"  -> Total items: {len(items)}.\n"
             f"  -> Reason: {reason}."
         )
@@ -63,6 +63,69 @@ def write_cached_to_sink(ids: list[str], sink: Path, cache_path: Path):
     return ids, cached_ids
 
 
+# pylint: disable=invalid-name
+async def fetch_process(
+    session: aiohttp.ClientSession,
+    id_: str,
+    url: str,
+    cache_path: Path,
+    fetch_all_fields: bool = True,
+    filter_function: FilterFunction = lambda _: True,
+):
+    """
+    Fetches a single process from `url`, applying filters and reporting whether
+    the result is selected, failed on captcha or etc. Returns the process if it
+    is selected, else returns `None`.
+    """
+    async with session.post(
+        url,
+        json={
+            "tipoProcesso": "1",
+            "codigoProcesso": id_,
+        },
+        ssl=False,  # FIXME: Properly handle TJ's outdated certificate
+    ) as response:
+        data = json.loads(await response.text())
+
+    match data:
+        case ["O processo informado não foi encontrado."]:
+            print(f"{id_}: Not found -- Cached now")
+            save_to_cache(
+                {REAL_ID_FIELD: id_},
+                cache_path,
+                state=CacheState.INVALID,
+            )
+            return
+        case ["Número do processo inválido."]:
+            print(f"{id_}: Invalid -- Cached now")
+            save_to_cache(
+                {REAL_ID_FIELD: id_},
+                cache_path,
+                state=CacheState.INVALID,
+            )
+            return
+        case {
+            "status": 412,
+            "mensagem": "Erro de validação do Recaptcha. Tente novamente.",
+        }:
+            print(f"{id_}: Unfetched, failed on recaptcha.")
+            return
+
+    if not filter_function(data):
+        subject = data.get("txtAssunto", "Sem Assunto")
+        print(f"{id_}: Filtered  -- ({subject}) -- Cached now ({data=})")
+        save_to_cache(data, cache_path, state=CacheState.CACHED)
+        return "Filtered"
+
+    save_to_cache(data, cache_path, state=CacheState.CACHED)
+
+    fields = data.keys() if fetch_all_fields else [REAL_ID_FIELD]
+
+    data = {k: v for k, v in data.items() if k in fields}
+    print(f"Fetched process {id_}: {data.get('txtAssunto', 'Sem Assunto')}")
+    return data
+
+
 def download_from_json(
     ids: list[str],
     sink: Path,
@@ -77,62 +140,10 @@ def download_from_json(
     Downloads data from urls that return JSON values. Previously cached results
     are used by default if `force_fetch` is not set to `True`.
     """
-    import aiohttp
     import asyncio
-    import json
 
     if not force_fetch:
         ids, _ = write_cached_to_sink(ids=ids, sink=sink, cache_path=cache_path)
-
-    # pylint: disable=invalid-name
-    async def fetch_process(session: aiohttp.ClientSession, id_: str, uf: str):
-        async with session.post(
-            base_urls[uf],
-            json={
-                "tipoProcesso": "1",
-                "codigoProcesso": id_,
-            },
-            ssl=False,  # FIXME: Properly handle TJ's outdated certificate
-        ) as response:
-            data = json.loads(await response.text())
-
-        match data:
-            case ["O processo informado não foi encontrado."]:
-                print(f"{id_}: Not found -- Cached now")
-                save_to_cache(
-                    {REAL_ID_FIELD: id_, DB_FIELD: id_},
-                    cache_path,
-                    state=CacheState.INVALID,
-                )
-                return
-            case ["Número do processo inválido."]:
-                print(f"{id_}: Invalid -- Cached now")
-                save_to_cache(
-                    {REAL_ID_FIELD: id_, DB_FIELD: id_},
-                    cache_path,
-                    state=CacheState.INVALID,
-                )
-                return
-            case {
-                "status": 412,
-                "mensagem": "Erro de validação do Recaptcha. Tente novamente.",
-            }:
-                print(f"{id_}: Unfetched, failed on recaptcha.")
-                return
-
-        if not filter_function(data):
-            subject = data.get("txtAssunto", "Sem Assunto")
-            print(f"{id_}: Filtered  -- ({subject}) -- Cached now ({data=})")
-            save_to_cache(data, cache_path, state=CacheState.CACHED)
-            return "Filtered"
-
-        save_to_cache(data, cache_path, state=CacheState.CACHED)
-
-        fields = data.keys() if fetch_all_fields else [DB_FIELD, REAL_ID_FIELD]
-
-        data = {k: v for k, v in data.items() if k in fields}
-        print(f"Fetched process {id_}: {data.get('txtAssunto', 'Sem Assunto')}")
-        return data
 
     async def fetch_all_processes(ids, step=100):
         total = 0
@@ -145,7 +156,17 @@ def download_from_json(
                     f"\n-- Wave: {(start // step) + 1}"
                     f"\n    ({sub_ids[0]}..{sub_ids[-1]})"
                 )
-                requests = (fetch_process(session, id_, "rj") for id_ in sub_ids)
+                requests = (
+                    fetch_process(
+                        session,
+                        id_,
+                        base_urls["rj"],
+                        cache_path=cache_path,
+                        filter_function=filter_function,
+                        fetch_all_fields=fetch_all_fields,
+                    )
+                    for id_ in sub_ids
+                )
                 data = await asyncio.gather(
                     *requests,
                 )
@@ -162,7 +183,7 @@ def download_from_json(
 
                 write_to_sink(data, sink, reason="Fetched")
 
-                partial_ids = [get_real_id(item) for item in data]
+                partial_ids = [get_process_id(item) for item in data]
 
                 print(
                     f"Partial result: {partial_ids} ({filtered} filtered, {invalid} invalid)"
@@ -187,7 +208,7 @@ def download_from_html(
     sink: Path,
 ):
     """Downloads data by crawling through possible URLs. Warning: not updated"""
-    from .html import run_spider, TJRJSpider
+    from .html import TJRJSpider, run_spider
     from .url import build_tjrj_process_url
 
     start_urls = [build_tjrj_process_url(id_) for id_ in ids]
@@ -263,7 +284,7 @@ def processes_by_subject(
     cached_processes = [
         item
         for item in restore(cache_path)
-        if item.get(DB_FIELD, "") in cached_ids
+        if item.get(REAL_ID_FIELD, "") in cached_ids
         and has_words_in_subject(item, list(words))
     ]
 

@@ -1,10 +1,6 @@
 """Related to a TJ's juridical process."""
 from typing import Optional, Union
 
-
-from deprecated import deprecated
-
-
 IdRange = Union[tuple[str, str], str]
 
 
@@ -26,26 +22,9 @@ Process = dict[str, ProcessField]
 
 
 REAL_ID_FIELD = "codProc"
-DB_FIELD = REAL_ID_FIELD
 
 
-@deprecated(
-    reason="Should only use get_id, as DB ID is the same as the real process ID now."
-)
-def get_db_id(process: Process) -> str:
-    """Gets the process ID used as a key to the database."""
-    return str(process[DB_FIELD])
-
-
-@deprecated(
-    reason="Should only use get_id, as DB ID is the same as the real process ID now."
-)
-def get_real_id(process: Process) -> str:
-    """Gets the process ID used as a unique identifier given by TJ."""
-    return get_id(process)
-
-
-def get_id(process: Process) -> str:
+def get_process_id(process: Process) -> str:
     """Gets the process ID used as a unique identifier given by TJ."""
     return str(process[REAL_ID_FIELD])
 

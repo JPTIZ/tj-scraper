@@ -3,8 +3,8 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
 
-from .process import all_from
 from .cache import jsonl_reader, restore
+from .process import all_from
 
 
 def make_intervals(known_ids: list[str]) -> list[tuple[str, str]]:
@@ -50,18 +50,16 @@ def make_webapp(cache_path=Path("cache.db")):
         import json
 
         range_files = Path("id_ranges.json")
-        print(f"Loading known ids")
+        print("Loading known ids")
         if range_files.exists():
-            print(f"Loading predefined intervals...")
-            with open(range_files) as file_:
+            print("Loading predefined intervals...")
+            with open(range_files, encoding="utf-8") as file_:
                 intervals = json.load(file_)
         elif cache_path.exists():
-            known_ids = [
-                str(item.get("codProc", item["idProc"])) for item in restore(cache_path)
-            ]
-            print(f"Making intervals...")
+            known_ids = [str(item.get("codProc")) for item in restore(cache_path)]
+            print("Making intervals...")
             intervals = make_intervals(known_ids)
-            with open(range_files, "w") as file_:
+            with open(range_files, "w", encoding="utf-8") as file_:
                 json.dump(intervals, file_)
         else:
             print("No cache file found. No intervals then...")
