@@ -1,9 +1,11 @@
 """Time measurement utilities."""
 from time import time
-from typing import Callable
+from typing import Callable, TypeVar
+
+Return = TypeVar("Return")
 
 
-def timeit(function: Callable, *args, **kwargs):
+def timeit(function: Callable[..., Return], *args, **kwargs) -> tuple[Return, float]:
     """
     Runs a function and returns how much time in seconds it took to execute it.
     """
@@ -19,7 +21,9 @@ def timeit(function: Callable, *args, **kwargs):
     return result, end - start
 
 
-def report_time(function: Callable, *args, **kwargs):
+def report_time(
+    function: Callable[..., Return], *args, **kwargs
+) -> tuple[Return, float]:
     """
     Same as `timeit`, but prints the ellapsed time.
     """
