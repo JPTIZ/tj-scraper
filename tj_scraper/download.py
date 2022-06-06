@@ -2,12 +2,12 @@
 import json
 from collections.abc import Collection
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable, Optional
 
 import aiohttp
 import jsonlines
 
-from .cache import CacheState, filter_cached, restore, restore_ids, save_to_cache
+from .cache import DBProcess, CacheState, filter_cached, restore_ids, save_to_cache
 from .process import (
     REAL_ID_FIELD,
     IdRange,
@@ -18,7 +18,7 @@ from .process import (
 )
 from .timing import report_time
 
-FilterFunction = Callable[[dict[str, Any]], bool]
+FilterFunction = Callable[[DBProcess], bool]
 DownloadFunction = Callable[[list[str], Path, Path, bool, FilterFunction], None]
 
 BASE_URLS = {
@@ -28,7 +28,7 @@ BASE_URLS = {
 }
 
 
-def write_to_sink(items: list[Process], sink: Path, reason: str):
+def write_to_sink(items: list[Process], sink: Path, reason: str) -> None:
     """
     A quick wrapper to write all data into a sink file while reporting about
     it.
@@ -42,7 +42,9 @@ def write_to_sink(items: list[Process], sink: Path, reason: str):
         output_f.write_all(items)  # type: ignore
 
 
-def write_cached_to_sink(ids: list[str], sink: Path, cache_path: Path):
+def write_cached_to_sink(
+    ids: list[str], sink: Path, cache_path: Path, filter_function: FilterFunction
+) -> tuple[list[str], list[str]]:
     """
     Write only items with given IDs that are cached into the sink and returns
     which are not and which are cached.
@@ -54,7 +56,9 @@ def write_cached_to_sink(ids: list[str], sink: Path, cache_path: Path):
 
     ids, cached_ids = map(to_list(str), filtered)
 
-    cached_items = restore_ids(cache_path, list(cached_ids))
+    cached_items = restore_ids(
+        cache_path, list(cached_ids), filter_function=filter_function
+    )
 
     print(f"Cached_ids: {cached_ids}")
 
@@ -71,7 +75,7 @@ async def fetch_process(
     cache_path: Path,
     fetch_all_fields: bool = True,
     filter_function: FilterFunction = lambda _: True,
-):
+) -> Optional[Process | str]:
     """
     Fetches a single process from `url`, applying filters and reporting whether
     the result is selected, failed on captcha or etc. Returns the process if it
@@ -109,7 +113,7 @@ async def fetch_process(
             "mensagem": "Erro de validação do Recaptcha. Tente novamente.",
         }:
             print(f"{id_}: Unfetched, failed on recaptcha.")
-            return
+            return None
 
     if not filter_function(data):
         subject = data.get("txtAssunto", "Sem Assunto")
@@ -135,17 +139,21 @@ def download_from_json(
     # pylint: disable=dangerous-default-value
     base_urls: dict[str, str] = BASE_URLS,
     force_fetch: bool = False,
-):
+) -> None:
     """
     Downloads data from urls that return JSON values. Previously cached results
     are used by default if `force_fetch` is not set to `True`.
     """
     import asyncio
 
-    if not force_fetch:
-        ids, _ = write_cached_to_sink(ids=ids, sink=sink, cache_path=cache_path)
+    print(f"download_from_json({ids=})")
 
-    async def fetch_all_processes(ids, step=100):
+    if not force_fetch:
+        ids, _ = write_cached_to_sink(
+            ids=ids, sink=sink, cache_path=cache_path, filter_function=filter_function
+        )
+
+    async def fetch_all_processes(ids: list[str], step: int = 100) -> int:
         total = 0
         async with aiohttp.ClientSession(trust_env=True) as session:
             for start in range(0, len(ids), step):
@@ -177,9 +185,7 @@ def download_from_json(
                 )
                 invalid = sum(1 if item is None else 0 for item in data)
 
-                data = [
-                    item for item in data if item is not None and item != "Filtered"
-                ]
+                data = [item for item in data if isinstance(item, dict)]
 
                 write_to_sink(data, sink, reason="Fetched")
 
@@ -206,7 +212,7 @@ def download_from_json(
 def download_from_html(
     ids: list[str],
     sink: Path,
-):
+) -> None:
     """Downloads data by crawling through possible URLs. Warning: not updated"""
     from .html import TJRJSpider, run_spider
     from .url import build_tjrj_process_url
@@ -235,11 +241,12 @@ def download_all_with_ids(
     fetch_all_fields: bool = True,
     filter_function: FilterFunction = lambda _: True,
     download_function: DownloadFunction = download_from_json,
-):
+) -> None:
     """
     Downloads relevant info from all valid process with ID in `ids` and saves
     it into `sink`. Expects `sink` to be in JSONLines format.
     """
+    print(f"download_all_with_ids({ids=})")
     download_function(ids, sink, cache_path, fetch_all_fields, filter_function)
 
 
@@ -250,7 +257,7 @@ def download_all_from_range(
     fetch_all_fields: bool = True,
     filter_function: FilterFunction = lambda _: True,
     download_function: DownloadFunction = download_from_json,
-):
+) -> None:
     """
     Downloads relevant info from all valid process whose ID is within
     `id_range` and saves it into `sink`. Expects `sink` to be in JSONLines
@@ -264,10 +271,11 @@ def processes_by_subject(
     id_range: IdRange,
     words: Collection[str],
     download_function: DownloadFunction,
-    output: Path = Path("results") / "raw.jsonl",
-    cache_path: Path = Path("results") / "cache.db",
-):
+    output: Path,
+    cache_path: Path,
+) -> None:
     """Search for processes that contain the given words on its subject."""
+    filter_function: Callable[[Process], bool]
     if words:
         print(f"Filtering by: {words}")
         filter_function = lambda item: has_words_in_subject(item, list(words))
@@ -276,25 +284,16 @@ def processes_by_subject(
         filter_function = lambda _: True
 
     all_from_range = set(all_from(id_range))
-    (ids, cached_ids), _ = report_time(
-        filter_cached, all_from_range, cache_path=cache_path
-    )
-    ids = list(ids)
-    cached_ids = list(cached_ids)
-    cached_processes = [
-        item
-        for item in restore(cache_path)
-        if item.get(REAL_ID_FIELD, "") in cached_ids
-        and has_words_in_subject(item, list(words))
-    ]
+    ids = list(all_from_range)
 
-    if not cached_processes:
-        print(f"No cached processes for given ID Range ({id_range}).")
+    print(f"Before: {ids=}")
+    # TODO: Checar isso, deveria escrever na cache só aqueles que não tem o
+    # assunto desejado.
+    # ids, cached_ids = write_cached_to_sink(ids, sink=output, cache_path=cache_path)
+    # print(f"After:\n    :: {ids=}\n    :: {cached_ids=}")
 
-    write_to_sink(cached_processes, sink=output, reason="Cached")
-
-    for filtered_id in set(all_from_range) - set(ids):
-        print(f"Ignoring {filtered_id} -- Cached")
+    # for cached_id in cached_ids:
+    #     print(f"Ignoring {cached_id} -- Cached")
 
     download_all_with_ids(
         ids,

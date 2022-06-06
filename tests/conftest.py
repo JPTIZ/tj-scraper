@@ -1,7 +1,10 @@
 """Pytest conftest module."""
 from pathlib import Path
 
+import json
 import pytest
+
+from . import CACHE_PATH
 
 
 def ignore_unused(
@@ -45,3 +48,39 @@ def pytest_runtest_makereport(item, call):
     # be "setup", "call", "teardown"
 
     setattr(item, "rep_" + rep.when, rep)
+
+
+@pytest.fixture(autouse=True)
+def show_cache_state(request):
+    """Shows current cache state when a test fails."""
+    from pprint import pprint
+
+    yield
+
+    if request.node.rep_call.failed:
+        print("Download test failed. Cache state:")
+        try:
+            state = {
+                i: {"ID": i, "CacheState": s, "Assunto": a, "JSON": v}
+                for (i, s, a, v) in load_all(cache_path=CACHE_PATH)
+            }
+            pprint(state, depth=3)
+        except Exception as error:  # pylint: disable=broad-except
+            print(" [ Failed to fetch cache state. ]")
+            print(f" [ Reason: {error}. ]")
+
+
+def load_all(cache_path: Path):
+    """Loads entire database content. For small DBs only (e.g. testing)."""
+    import sqlite3
+
+    with sqlite3.connect(cache_path) as connection:
+        cursor = connection.cursor()
+
+        return [
+            (id_, cache_state, assunto, json.loads(item_json))
+            for id_, cache_state, assunto, item_json, in cursor.execute(
+                "select id, cache_state, assunto, json from Processos",
+            )
+        ]
+    return []

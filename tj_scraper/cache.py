@@ -1,9 +1,10 @@
 """Deals with cache-related features."""
+import json
 import sqlite3
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Optional
 
 import jsonlines
 
@@ -24,6 +25,16 @@ class CacheState(Enum):
     OUTDATED = "OUTDATED"
     INVALID = "INVALID"
     NOT_CACHED = "NOT_CACHED"
+
+
+@dataclass
+class DBProcess:
+    """A process as it is registered in the database."""
+
+    id_: str
+    cache_state: CacheState
+    assunto: str
+    json: dict[str, Any]
 
 
 def create_database(path: Path):
@@ -69,20 +80,15 @@ def save_to_cache(item: Process, cache_path: Path, state=CacheState.CACHED):
 
     item_db_id = get_process_id(item)
 
-    if restore_ids(cache_path, ids=[item_db_id]):
-        return
-
     with sqlite3.connect(cache_path) as connection:
-        import json
-
         cursor = connection.cursor()
         cursor.execute(
             """
-            insert into Processos(id, cache_state, assunto, json)
+            insert or ignore into Processos(id, cache_state, assunto, json)
             values(?, ?, ?, ?)
             """,
             (
-                item_db_id,  # TODO: Use ONLY real ID for storage. DB ID is solely for TJRJ's DB.
+                item_db_id,
                 state.value,
                 item.get("txtAssunto"),
                 json.dumps(item),
@@ -93,6 +99,7 @@ def save_to_cache(item: Process, cache_path: Path, state=CacheState.CACHED):
 def restore_ids(
     cache_path: Path,
     ids: list[str],
+    filter_function: Callable[[DBProcess], bool],
 ) -> list[Process]:
     """
     Loads specific processes from cache with given IDs.
@@ -100,18 +107,29 @@ def restore_ids(
     if not cache_path.exists():
         raise FileNotFoundError(cache_path)
 
-    with sqlite3.connect(cache_path) as connection:
-        import json
+    def is_id_in_list(id_: str):
+        result = id_ in ids
+        print(f":: Restoring IDs: {id_} is in {ids}? {result}")
+        return result
 
+    def custom_filter(id_: str, state: CacheState, assunto: str, json_str: str) -> bool:
+        try:
+            _ = id_, assunto, state
+            # TODO: process = DBProcess(id_, assunto, json.loads(json_str))
+            return filter_function(json.loads(json_str))
+        except Exception as error:
+            print(f"Failed to use custom filter: {error}")
+            raise
+
+    with sqlite3.connect(cache_path) as connection:
+        connection.create_function("is_in_list", 1, is_id_in_list)
+        connection.create_function("custom_filter", 4, custom_filter)
         cursor = connection.cursor()
 
         return [
             json.loads(item_json)
             for item_json, in cursor.execute(
-                "select json from Processos" " where id in (:ids)",
-                {
-                    "ids": ",".join(ids),
-                },
+                "select json from Processos where is_in_list(id) and custom_filter(id, cache_state, assunto, json)",
             )
         ]
 
@@ -133,8 +151,6 @@ def restore(
     with_subject = with_subject or []
 
     with sqlite3.connect(cache_path) as connection:
-        import json
-
         cursor = connection.cursor()
 
         extra = ""
@@ -228,8 +244,6 @@ def show_cache_state(cache_path: Path):
 
     def load_all(cache_path: Path):
         """Loads entire database content. For small DBs only (e.g. testing)."""
-        import json
-
         with sqlite3.connect(cache_path) as connection:
             cursor = connection.cursor()
 

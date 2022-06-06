@@ -37,6 +37,7 @@ def make_intervals(known_ids: list[str]) -> list[tuple[str, str]]:
 def make_webapp(cache_path=Path("cache.db")):
     """Creates the tj_scraper flask application."""
     # pylint: disable=redefined-outer-name
+    # pylint: disable=too-many-statements
     app = Flask(__name__)
     # from tj_scraper.cache import quickfix_db_id_to_real_id
     # quickfix_db_id_to_real_id(cache_path)
@@ -92,6 +93,7 @@ def make_webapp(cache_path=Path("cache.db")):
 
         with NamedTemporaryFile() as sink:
             sink_file = Path(sink.name)
+
             match request.args:
                 case {"assunto": subject}:
                     print(f"Com assunto, {subject=}")

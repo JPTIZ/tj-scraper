@@ -63,10 +63,20 @@ def make_app():
     @app.command()
     def download(  # pylint: disable=unused-variable
         id_range: str = Argument(
-            ..., help="Intervalo ou número específico do processo", metavar="INTERVALO"
+            ...,
+            help="Intervalo ou número específico do processo",
+            metavar="INTERVALO",
         ),
         mode: DownloadModes = Argument(
             DownloadModes.JSON.value,
+        ),
+        output: Path = Argument(
+            ...,
+            help="Arquivo em que ficarão salvos os dados salvos dos processos.",
+        ),
+        cache_path: Path = Argument(
+            ...,
+            help="Arquivo de cache para acelerar futuras consultas.",
         ),
         subjects: Optional[list[str]] = Option(
             ...,
@@ -123,6 +133,8 @@ def make_app():
             id_or_range(id_range),
             subjects or [],
             download_function=download_function,  # type: ignore
+            output=output,
+            cache_path=cache_path,
         )
 
     @app.command()

@@ -2,6 +2,7 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=unused-argument
 # pyright: reportUnusedImport=false
+import json
 from pathlib import Path
 
 from aioresponses import aioresponses, CallbackResult
@@ -12,43 +13,6 @@ from tj_scraper.process import has_words_in_subject, get_process_id
 
 from . import CACHE_PATH, LOCAL_URL, MOCK_DB, REAL_IDS
 from .conftest import ignore_unused, reverse_lookup
-
-
-@pytest.fixture(autouse=True)
-def show_cache_state(request):
-    """Shows current cache state when a test fails."""
-    from pprint import pprint
-
-    yield
-
-    if request.node.rep_call.failed:
-        print("Download test failed. Cache state:")
-        try:
-            state = {
-                i: {"ID": i, "CacheState": s, "Assunto": a, "JSON": v}
-                for (i, s, a, v) in load_all(cache_path=CACHE_PATH)
-            }
-            pprint(state, depth=3)
-        except Exception as error:  # pylint: disable=broad-except
-            print(" [ Failed to fetch cache state. ]")
-            print(f" [ Reason: {error}. ]")
-
-
-def load_all(cache_path: Path):
-    """Loads entire database content. For small DBs only (e.g. testing)."""
-    import json
-    import sqlite3
-
-    with sqlite3.connect(cache_path) as connection:
-        cursor = connection.cursor()
-
-        return [
-            (id_, cache_state, assunto, json.loads(item_json))
-            for id_, cache_state, assunto, item_json, in cursor.execute(
-                "select id, cache_state, assunto, json from Processos",
-            )
-        ]
-    return []
 
 
 @pytest.fixture()
@@ -112,7 +76,6 @@ def test_sanity(local_tj):
 
     import aiohttp
     import asyncio
-    import json
 
     id_ = "1"
 
@@ -166,6 +129,7 @@ def test_download_in_parts_without_overlap(local_tj, results_sink):
     assert has_same_entries(data, MOCK_DB.values())
 
 
+@pytest.mark.xfail(reason="Need to decide if sink should have only unique data")
 def test_download_in_parts_with_overlap(local_tj, results_sink):
     """Tests if download function works when given ID ranges overlap/repeat."""
     ignore_unused(local_tj)
