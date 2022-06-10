@@ -6,23 +6,23 @@ from typing import Optional
 from typer import Argument, Exit, Option, Typer
 
 from .download import download_from_html, download_from_json, processes_by_subject
-from .process import id_or_range
+from .process import id_or_range, IdRange, ProcessNumber
 
 
-def make_app():
+def make_app() -> Typer:
     """Creates CLI application."""
     app = Typer()
 
     cache_cmd = Typer()
 
     @app.command()
-    def cache():
+    def cache() -> None:
         """Operações relacionadas à cache."""
 
     @cache_cmd.command()
     def info(
         cache_file: Path = Path("results") / "cache.jsonl",
-    ):
+    ) -> None:
         i = 0
         with open(cache_file, encoding="utf-8") as cache:
             for i, _ in enumerate(cache.readlines(), start=1):
@@ -32,7 +32,7 @@ def make_app():
     @cache_cmd.command()
     def restore(
         cache_file: Path = Path("results") / "cache.jsonl",
-    ):
+    ) -> None:
         from .cache import restore
 
         print(restore(cache_file, []))
@@ -40,7 +40,7 @@ def make_app():
     app.add_typer(cache_cmd, name="cache")
 
     @app.command()
-    def export(input_: Path, output: Path):  # pylint: disable=unused-variable
+    def export(input_: Path, output: Path) -> None:  # pylint: disable=unused-variable
         """Exporta os dados para uma planilha XLSX."""
         print(f"Exporting {input_} to {output}")
         import jsonlines
@@ -48,7 +48,7 @@ def make_app():
         from .export import export_to_xlsx
 
         with jsonlines.open(input_) as reader:
-            data = [item for item in reader if item != "Filtered"]  # type: ignore
+            data = [item for item in reader if item != "Filtered"]
             export_to_xlsx(data, output)
 
     class DownloadModes(str, Enum):
@@ -129,8 +129,11 @@ def make_app():
             DownloadModes.JSON: download_from_json,
         }[mode]
 
+        if isinstance(id_range_ := id_or_range(id_range), ProcessNumber):
+            id_range_ = IdRange(id_range_, id_range_)
+
         processes_by_subject(
-            id_or_range(id_range),
+            id_range_,
             subjects or [],
             download_function=download_function,  # type: ignore
             output=output,

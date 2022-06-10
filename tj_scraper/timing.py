@@ -1,33 +1,38 @@
 """Time measurement utilities."""
+from dataclasses import dataclass
 from time import time
-from typing import Callable, TypeVar
+from typing import Callable, Generic, ParamSpec, TypeVar
 
 Return = TypeVar("Return")
+Args = ParamSpec("Args")
 
 
-def timeit(function: Callable[..., Return], *args, **kwargs) -> tuple[Return, float]:
+@dataclass(frozen=True, slots=True)
+class Timed(Generic[Return]):
+    value: Return
+    time: float
+
+
+def timeit(
+    function: Callable[Args, Return], *args: Args.args, **kwargs: Args.kwargs
+) -> Timed[Return]:
     """
     Runs a function and returns how much time in seconds it took to execute it.
     """
-    try:
-        start = time()
-        result = function(*args, **kwargs)
-        end = time()
-    except TypeError:
-        start = time()
-        result = function(*args)
-        end = time()
+    start = time()
+    result = function(*args, **kwargs)
+    end = time()
 
-    return result, end - start
+    return Timed(result, end - start)
 
 
 def report_time(
-    function: Callable[..., Return], *args, **kwargs
-) -> tuple[Return, float]:
+    function: Callable[Args, Return], *args: Args.args, **kwargs: Args.kwargs
+) -> Timed[Return]:
     """
     Same as `timeit`, but prints the ellapsed time.
     """
-    result, ellapsed = timeit(function, *args, **kwargs)
+    result = timeit(function, *args, **kwargs)
 
-    print(f"{function.__name__} took {ellapsed:.2}s to execute.")
-    return result, ellapsed
+    print(f"{function.__name__} took {result.time:.2}s to execute.")
+    return result

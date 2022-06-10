@@ -4,11 +4,11 @@ import sqlite3
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
 import jsonlines
 
-from .process import Process, get_process_id
+from .process import Process, ProcessNumber, get_process_id, make_cnj_code, to_number
 
 
 class CacheState(Enum):
@@ -16,13 +16,11 @@ class CacheState(Enum):
     Describes each possible state of a previously found data:
 
     CACHED: Data exists externally and is cached.
-    OUTDATED: Data exists externally but is locally outdated.
     INVALID: Data does not exists externally (wrong ID or process type).
     NOT_CACHED: There's no cache information for given data.
     """
 
     CACHED = "CACHED"
-    OUTDATED = "OUTDATED"
     INVALID = "INVALID"
     NOT_CACHED = "NOT_CACHED"
 
@@ -34,10 +32,10 @@ class DBProcess:
     id_: str
     cache_state: CacheState
     assunto: str
-    json: dict[str, Any]
+    json: Mapping[str, Any]
 
 
-def create_database(path: Path):
+def create_database(path: Path) -> None:
     """Creates database file and its tables."""
     with sqlite3.connect(path) as connection:
         cursor = connection.cursor()
@@ -53,7 +51,7 @@ def create_database(path: Path):
         )
 
 
-def quickfix_db_id_to_real_id(cache_path: Path):
+def quickfix_db_id_to_real_id(cache_path: Path) -> None:
     """."""
     data = restore(cache_path)
 
@@ -73,7 +71,9 @@ def quickfix_db_id_to_real_id(cache_path: Path):
             )
 
 
-def save_to_cache(item: Process, cache_path: Path, state=CacheState.CACHED):
+def save_to_cache(
+    item: Process, cache_path: Path, state: CacheState = CacheState.CACHED
+) -> None:
     """Caches (saves) an item into a database of known items."""
     if not cache_path.exists():
         create_database(cache_path)
@@ -98,7 +98,7 @@ def save_to_cache(item: Process, cache_path: Path, state=CacheState.CACHED):
 
 def restore_ids(
     cache_path: Path,
-    ids: list[str],
+    ids: list[ProcessNumber],
     filter_function: Callable[[DBProcess], bool],
 ) -> list[Process]:
     """
@@ -107,16 +107,19 @@ def restore_ids(
     if not cache_path.exists():
         raise FileNotFoundError(cache_path)
 
-    def is_id_in_list(id_: str):
-        result = id_ in ids
+    def is_id_in_list(id_: str) -> bool:
+        result = to_number(id_) in ids
         print(f":: Restoring IDs: {id_} is in {ids}? {result}")
         return result
 
     def custom_filter(id_: str, state: CacheState, assunto: str, json_str: str) -> bool:
         try:
-            _ = id_, assunto, state
-            # TODO: process = DBProcess(id_, assunto, json.loads(json_str))
-            return filter_function(json.loads(json_str))
+            process = DBProcess(
+                id_, cache_state=state, assunto=assunto, json=json.loads(json_str)
+            )
+            result = filter_function(process)
+            print(f"::              : {id_} passes custom filter? {result}")
+            return result
         except Exception as error:
             print(f"Failed to use custom filter: {error}")
             raise
@@ -129,7 +132,9 @@ def restore_ids(
         return [
             json.loads(item_json)
             for item_json, in cursor.execute(
-                "select json from Processos where is_in_list(id) and custom_filter(id, cache_state, assunto, json)",
+                "select json from Processos"
+                " where is_in_list(id)"
+                " and custom_filter(id, cache_state, assunto, json)",
             )
         ]
 
@@ -138,7 +143,7 @@ def restore_ids(
 
 def restore(
     cache_path: Path,
-    exclude_ids: Optional[list[str]] = None,
+    exclude_ids: Optional[list[ProcessNumber]] = None,
     with_subject: Optional[list[str]] = None,
 ) -> list[Process]:
     """
@@ -164,7 +169,7 @@ def restore(
                 " where id not in (:exclude_ids) "
                 f"{extra}",
                 {
-                    "exclude_ids": ",".join(exclude_ids),
+                    "exclude_ids": ",".join(make_cnj_code(id_) for id_ in exclude_ids),
                     "subject": ",".join(with_subject),
                 },
             ).fetchall()
@@ -188,7 +193,7 @@ def jsonl_reader(path: Path) -> jsonlines.Reader:
     Wrapper for `jsonlines.open` to make it easier to ignore mypy errors about
     Reader|Writer.
     """
-    return jsonlines.open(path, "r")  # type: ignore
+    return jsonlines.open(path, "r")
 
 
 def metadata_path(cache_path: Path) -> Path:
@@ -219,7 +224,14 @@ def load_metadata(cache_path: Path) -> CacheMetadata:
     return CacheMetadata(describes=cache_path, states={})
 
 
-def filter_cached(ids: list[str], cache_path: Path) -> tuple[set[str], set[str]]:
+@dataclass
+class Filtered:
+    not_cached: set[ProcessNumber]
+    cached: set[ProcessNumber]
+    invalid: set[ProcessNumber]
+
+
+def filter_cached(ids: list[ProcessNumber], cache_path: Path) -> Filtered:
     """
     Filters IDs that are already cached. Returns a tuple with uncached and
     cached ids, respectively.
@@ -230,30 +242,42 @@ def filter_cached(ids: list[str], cache_path: Path) -> tuple[set[str], set[str]]
 
     cached_ids = {
         cached_id
-        for cached_id, state in cache.states.items()
-        if state == CacheState.CACHED
+        for raw_cached_id, state in cache.states.items()
+        if state == CacheState.CACHED and (cached_id := to_number(raw_cached_id)) in ids
     }
 
-    filtered_ids = set(ids) - cached_ids
+    invalid_ids = {
+        cached_id
+        for raw_cached_id, state in cache.states.items()
+        if state == CacheState.INVALID
+        and (cached_id := to_number(raw_cached_id)) in ids
+    }
 
-    return filtered_ids, cached_ids
+    filtered_ids = set(ids) - (cached_ids | invalid_ids)
+
+    return Filtered(
+        not_cached=filtered_ids,
+        cached=cached_ids,
+        invalid=invalid_ids,
+    )
 
 
-def show_cache_state(cache_path: Path):
+def load_all(cache_path: Path) -> list[tuple[str, str, str, dict[str, Any]]]:
+    """Loads entire database content. For small DBs only (e.g. testing)."""
+    with sqlite3.connect(cache_path) as connection:
+        cursor = connection.cursor()
+
+        return [
+            (id_, cache_state, assunto, json.loads(item_json))
+            for id_, cache_state, assunto, item_json, in cursor.execute(
+                "select id, cache_state, assunto, json from Processos",
+            )
+        ]
+    return []
+
+
+def show_cache_state(cache_path: Path) -> None:
     """Shows current cache state when a test fails."""
-
-    def load_all(cache_path: Path):
-        """Loads entire database content. For small DBs only (e.g. testing)."""
-        with sqlite3.connect(cache_path) as connection:
-            cursor = connection.cursor()
-
-            return [
-                (id_, cache_state, assunto, json.loads(item_json))
-                for id_, cache_state, assunto, item_json, in cursor.execute(
-                    "select id, cache_state, assunto, json from Processos",
-                )
-            ]
-        return []
 
     from pprint import pprint
 

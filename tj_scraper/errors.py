@@ -1,8 +1,8 @@
 """Common errors that may be thrown."""
 
 
-class BadProcessId(Exception):
-    """Thrown when an invalid Process ID/Number is used in a request."""
+class InvalidProcessNumber(Exception):
+    """Thrown when an invalid Process Number is used."""
 
 
 class BlockedByCaptcha(Exception):

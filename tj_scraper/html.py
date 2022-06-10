@@ -4,25 +4,25 @@ tools).
 """
 import multiprocessing
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable, Generator
 
 from scrapy.crawler import CrawlerRunner, Spider
 from scrapy.http import Response
 from twisted.internet import reactor
 
-from .errors import BadProcessId
+from .errors import InvalidProcessNumber
 from .process import Process
 from .url import build_tjrj_process_url
 
 
-def check_for_captcha(process_id: str, response: Response):
+def check_for_captcha(process_id: str, response: Response) -> tuple[str, Response]:
     """
     Raises a `BlockedByCaptcha` if response page has a captcha on it.
     """
     return process_id, response
 
 
-def check_for_valid_id(process_id: str, response: Response):
+def check_for_valid_id(process_id: str, response: Response) -> None:
     """
     Raises an `BadProcessId` if response page is an error page stating the
     process_id is invalid
@@ -34,7 +34,7 @@ def check_for_valid_id(process_id: str, response: Response):
         return
 
     if h3_content.lower() == "erro":
-        raise BadProcessId(process_id)
+        raise InvalidProcessNumber(process_id)
 
 
 def extract_process_id(response: Response) -> str:
@@ -50,7 +50,7 @@ def extract_process_id(response: Response) -> str:
 
     def assume_good_page() -> str:
         xpath = "//form/table/tbody/tr[3]/td[1]/h2/text()"
-        return response.xpath(xpath)[1].get().strip()
+        return str(response.xpath(xpath)[1].get()).strip()
 
     if _id := try_or_false(assume_good_page):
         return _id
@@ -58,7 +58,12 @@ def extract_process_id(response: Response) -> str:
     return ""
 
 
-def extract_page_content(response: Response):
+def extract_field(response: Response, field_text: str) -> str:
+    field_xpath = f"//td[text()='{field_text}:']/following-sibling::td/text()"
+    return str(response.xpath(field_xpath).get()).strip()
+
+
+def extract_page_content(response: Response) -> tuple[str, str]:
     """
     Extracts page content. Raises exceptions if not a valid process page.
     """
@@ -67,9 +72,8 @@ def extract_page_content(response: Response):
     check_for_captcha(process_id, response)
     check_for_valid_id(process_id, response)
 
-    subject_xpath = "//td[text()='Assunto:']/following-sibling::td/text()"
     try:
-        content = response.xpath(subject_xpath).get().strip()
+        content = extract_field(response, "Assunto")
         return process_id, content
     except AttributeError:
         failed_page = Path("results/failed.html")
@@ -79,7 +83,7 @@ def extract_page_content(response: Response):
         raise
 
 
-class TJRJSpider(Spider):
+class TJRJSpider(Spider):  # type: ignore
     """Extracts quotes from TJ-RJ page."""
 
     build_process_url = build_tjrj_process_url
@@ -87,38 +91,37 @@ class TJRJSpider(Spider):
     name = "tjrj-spider"
     start_urls = [build_process_url("2007.001.209836-2")]
 
-    def parse(self, response: Response, **kwargs):
+    def parse(self, response: Response, **_: Any) -> Generator[Process, None, None]:
         process_id, page_content = extract_page_content(response)
 
-        yield Process(
-            {
-                "process_id": process_id,
-                "uf": "RJ",
-                "subject": page_content.replace("\n", " "),
-                "lawyers": [],
-                "extras": [],
-            }
-        )
+        yield {
+            "process_id": process_id,
+            "uf": "RJ",
+            "subject": page_content.replace("\n", " "),
+            "lawyers": [],
+            "extras": [],
+        }
 
 
-def run_spider(spider, **kwargs):
+def run_spider(spider: type[Spider], **kwargs: Any) -> None:
     """
     Runs a spider in a separated subprocess, enabling to run multiple spiders
     in a single run.
     """
+    from queue import Queue
 
-    def _run_spider(queue):
+    def _run_spider(queue: Queue[Any]) -> None:
         runner = CrawlerRunner(kwargs.get("settings", {}))
         deferred = runner.crawl(spider, **kwargs)
         # Just to shut mypy errors due to bad Twisted design
-        reactor.stop = reactor.stop or (lambda x: x)
-        reactor.run = reactor.run or (lambda x: x)
+        reactor.stop = reactor.stop or (lambda: None)  # type: ignore
+        reactor.run = reactor.run or (lambda: None)  # type: ignore
         # --
-        deferred.addBoth(lambda _: reactor.stop())
-        reactor.run()
+        deferred.addBoth(lambda _: reactor.stop())  # type: ignore
+        reactor.run()  # type: ignore
         queue.put(None)
 
-    queue = multiprocessing.Queue()
+    queue: Queue[Any] = multiprocessing.Queue()
     process = multiprocessing.Process(target=_run_spider, args=(queue,))
     process.start()
     result = queue.get()

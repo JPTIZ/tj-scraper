@@ -4,20 +4,27 @@
 # pyright: reportUnusedImport=false
 import json
 from pathlib import Path
+from typing import Generator
 
 import pytest
+from flask import Flask
 from flask.testing import FlaskClient
-from aioresponses import CallbackResult, aioresponses
+from aioresponses import aioresponses
 
-from tj_scraper.process import get_process_id
+from tj_scraper.cache import load_all
+from tj_scraper.process import Process
 from tj_scraper.webapp import make_webapp
 
-from . import CACHE_PATH, LOCAL_URL, MOCK_DB, REAL_IDS
-from .conftest import ignore_unused, reverse_lookup
+from . import CACHE_PATH, MOCK_DB, REAL_IDS
+from .fixtures import local_tj, results_sink
+from .helpers import ignore_unused, has_same_entries, reverse_lookup
+
+
+ignore_unused(local_tj, results_sink, reason="Fixtures")
 
 
 @pytest.fixture
-def webapp(local_tj, cache_db):
+def webapp(local_tj: aioresponses, cache_db: Path) -> Generator[Flask, None, None]:
     ignore_unused(local_tj)
 
     webapp = make_webapp(cache_path=cache_db)
@@ -27,13 +34,18 @@ def webapp(local_tj, cache_db):
 
 
 @pytest.fixture
-def client(webapp) -> FlaskClient:
+def client(webapp: Flask) -> FlaskClient:
     return webapp.test_client()
+
+
+import _pytest.fixtures
 
 
 # TODO: Put these common function/fixtures in a common place.
 @pytest.fixture(autouse=True)
-def show_cache_state(request):
+def show_cache_state(
+    request: _pytest.fixtures.FixtureRequest,
+) -> Generator[None, None, None]:
     """Shows current cache state when a test fails."""
     from pprint import pprint
 
@@ -52,68 +64,12 @@ def show_cache_state(request):
             print(f" [ Reason: {error}. ]")
 
 
-def load_all(cache_path: Path):
-    """Loads entire database content. For small DBs only (e.g. testing)."""
-    import json
-    import sqlite3
-
-    with sqlite3.connect(cache_path) as connection:
-        cursor = connection.cursor()
-
-        return [
-            (id_, cache_state, assunto, json.loads(item_json))
-            for id_, cache_state, assunto, item_json, in cursor.execute(
-                "select id, cache_state, assunto, json from Processos",
-            )
-        ]
-    return []
-
-
-@pytest.fixture()
-def local_tj():
-    """
-    Gives a aioresponses wrapper so aiohttp requests actually fallback to a
-    local TJ database.
-    """
-
-    def callback(_, **kwargs):
-        json = kwargs["json"]
-        process_id = reverse_lookup(REAL_IDS, json["codigoProcesso"])
-        payload = (
-            MOCK_DB[process_id]
-            if process_id is not None
-            else ["Número do processo inválido."]
-        )
-        return CallbackResult(status=200, payload=payload)
-
-    with aioresponses() as mocked_aiohttp:
-        mocked_aiohttp.post(LOCAL_URL, callback=callback, repeat=True)
-        yield mocked_aiohttp
-
-
-@pytest.fixture()
-def results_sink():
-    """A sink file for tests' collected download items."""
-    sink = Path("tests") / "test_results.jsonl"
-    yield sink
-    sink.unlink(missing_ok=True)
-
-
-def retrieve_data(results_sink) -> list[dict[str, str]]:
+def retrieve_data(results_sink: Path) -> list[dict[str, str]]:
     """Retrieves data collected stored in sink."""
     import jsonlines
 
     with jsonlines.open(results_sink) as sink:
-        return list(sink)  # type: ignore
-
-
-def has_same_entries(lhs, rhs):
-    """
-    Checks if `lhs` and `rhs` contain the same entries even if they're on
-    different positions.
-    """
-    assert sorted(list(lhs), key=get_process_id) == sorted(list(rhs), key=get_process_id)  # type: ignore
-    return True
+        return list(sink)
 
 
 def test_sanity(client: FlaskClient) -> None:
@@ -129,7 +85,37 @@ def test_sanity(client: FlaskClient) -> None:
         "/buscar",
         query_string={
             "intervalo_inicio": "2021.001.150000-0",
-            "intervalo_fim": "2021.001.150000-3",
+            "intervalo_fim": "2021.001.150000-4",
+            "assunto": "",
+            "tipo_download": "json",
+        },
+    )
+
+    data: list[Process] = json.loads(response.data.decode("utf-8"))
+
+    assert has_same_entries(data, expected)
+
+
+def test_same_request_twice(client: FlaskClient) -> None:
+    ignore_unused(client)
+
+    expected = MOCK_DB.values()
+
+    response = client.get(
+        "/buscar",
+        query_string={
+            "intervalo_inicio": "2021.001.150000-0",
+            "intervalo_fim": "2021.001.150000-4",
+            "assunto": "",
+            "tipo_download": "json",
+        },
+    )
+
+    response = client.get(
+        "/buscar",
+        query_string={
+            "intervalo_inicio": "2021.001.150000-0",
+            "intervalo_fim": "2021.001.150000-4",
             "assunto": "",
             "tipo_download": "json",
         },
@@ -140,10 +126,17 @@ def test_sanity(client: FlaskClient) -> None:
     assert has_same_entries(data, expected)
 
 
-def test_request_twice(client: FlaskClient) -> None:
+def test_request_two_non_overlapping_returns_only_wanted(client: FlaskClient) -> None:
     ignore_unused(client)
 
-    expected = MOCK_DB.values()
+    expected = [
+        MOCK_DB[reverse_lookup(REAL_IDS, id_) or id_]
+        for id_ in [
+            "2021.001.150000-1",
+            "2021.001.150000-2",
+            "2021.001.150000-3",
+        ]
+    ]
 
     response = client.get(
         "/buscar",
@@ -155,11 +148,22 @@ def test_request_twice(client: FlaskClient) -> None:
         },
     )
 
+    data = json.loads(response.data.decode("utf-8"))
+
+    assert has_same_entries(data, expected)
+
+    expected = [
+        MOCK_DB[reverse_lookup(REAL_IDS, id_) or id_]
+        for id_ in [
+            "2021.001.150000-4",
+        ]
+    ]
+
     response = client.get(
         "/buscar",
         query_string={
-            "intervalo_inicio": "2021.001.150000-0",
-            "intervalo_fim": "2021.001.150000-3",
+            "intervalo_inicio": "2021.001.150000-4",
+            "intervalo_fim": "2021.001.150000-4",
             "assunto": "",
             "tipo_download": "json",
         },

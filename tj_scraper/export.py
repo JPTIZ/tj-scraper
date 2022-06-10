@@ -17,9 +17,11 @@ def select_fields(
     return [{k: v for k, v in process.items() if k in fields} for process in processes]
 
 
-def flatten(process: Process) -> dict[str, str]:
+def flatten(process_: Process) -> dict[str, str]:
     """Normalizes a process info from JSON to a simple string -> string mapping."""
     # Info that is not in input
+    process = dict(process_)
+
     result = {
         "UF": "RJ",
     }
@@ -29,7 +31,7 @@ def flatten(process: Process) -> dict[str, str]:
     if not process:
         return {}
     result |= {
-        "ID do Processo": str(process.pop("codProc")),
+        "Número do Processo": str(process.pop("codProc")),
         "Assunto": str(process.get("txtAssunto", "Sem Assunto")),
     }
     print(f"Flattening {result['ID do Processo']}")
@@ -116,7 +118,6 @@ def export_to_xlsx(raw_data: Collection[Process], path: Path) -> None:
 
     for row, process in enumerate(data, start=1):
         for col, key in enumerate(keys, start=1):
-            # type: ignore
             sheet.cell(column=col, row=row, value=str(process.get(key, "")))
 
     book.save(path)
