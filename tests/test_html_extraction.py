@@ -1,5 +1,6 @@
 """Tests main module functions in local files"""
 from pathlib import Path
+from typing import Generator, TypedDict
 
 import jsonlines
 import pytest
@@ -10,6 +11,18 @@ from tj_scraper.html import (
 )
 
 
+Object = dict[str, str]
+
+
+class Settings(TypedDict):
+    FEEDS: dict[Path, Object]
+    FEED_EXPORT_ENCODING: str
+
+
+def make_file_url(path: Path) -> str:
+    return f"file://{path.resolve()}"
+
+
 class LocalTJRJSpider(TJRJSpider):
     """
     Simulates TJRJ Spider by fetching local files instead of the real
@@ -17,13 +30,13 @@ class LocalTJRJSpider(TJRJSpider):
     """
 
     start_urls = [
-        f"file://{(Path.cwd() / 'samples' / 'invalid-numProcesso.html').resolve()}",
+        make_file_url((Path.cwd() / "samples" / "invalid-numProcesso.html")),
     ]
 
 
 # pylint: disable=redefined-outer-name
 @pytest.fixture(scope="module")
-def crawler_settings():
+def crawler_settings() -> Settings:
     """Generates most basic settings for crawler."""
     return {
         "FEEDS": {},
@@ -33,18 +46,21 @@ def crawler_settings():
 
 # pylint: disable=redefined-outer-name
 @pytest.fixture
-def items_sink(crawler_settings):
+def items_sink(crawler_settings: Settings) -> Generator[Path, None, None]:
     """
     Generates a items.json sink file with results and deletes it at the end.
     """
     sink = Path("items.json")
-    crawler_settings["FEEDS"][sink] = {"format": "jsonlines"}
+    feeds = crawler_settings["FEEDS"]
+    feeds[sink] = {"format": "jsonlines"}
     yield sink
     sink.unlink(missing_ok=True)
 
 
 # pylint: disable=redefined-outer-name
-def test_fetch_subject_from_a_process_page(items_sink, crawler_settings):
+def test_fetch_subject_from_a_process_page(
+    items_sink: Path, crawler_settings: Settings
+) -> None:
     """
     Tests if crawling a single process subject page fetches its subject
     correctly.
@@ -66,7 +82,9 @@ def test_fetch_subject_from_a_process_page(items_sink, crawler_settings):
     )
 
 
-def test_do_not_include_invalid_process_page(items_sink, crawler_settings):
+def test_do_not_include_invalid_process_page(
+    items_sink: Path, crawler_settings: Settings
+) -> None:
     """
     Tests if an unexistent proccess ID page is not added to sink.
     """
@@ -86,7 +104,7 @@ def test_do_not_include_invalid_process_page(items_sink, crawler_settings):
     assert not data
 
 
-def test_detect_captcha_page(items_sink, crawler_settings):
+def test_detect_captcha_page(items_sink: Path, crawler_settings: Settings) -> None:
     """
     Tests if an unexistent proccess ID page is correctly detected.
     """

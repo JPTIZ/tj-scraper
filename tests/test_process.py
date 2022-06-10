@@ -2,34 +2,70 @@
 import pytest
 
 from tj_scraper.process import (
+    IdRange,
+    ProcessNumber,
+    TJRJ,
     all_from,
     cap_with_carry,
     has_words_in_subject,
     id_or_range,
-    to_parts,
+    make_cnj_code,
+    advance,
+    to_number,
 )
 
 
-def test_split_id_with_valid_input():
+def test_make_cnj_code() -> None:
+    """Tests if CNJ number is properly generated."""
+    assert (
+        make_cnj_code(ProcessNumber(0, 1, 2021, TJRJ.code, 3))
+        == "000000-01.2021.8.19.0003"
+    )
+    assert (
+        make_cnj_code(ProcessNumber(1234, 20, 2021, TJRJ.code, 45))
+        == "001234-20.2021.8.19.0045"
+    )
+
+
+def test_advance_process_number() -> None:
+    """
+    Tests if getting the next CNJ number for a process number specification
+    works as expected.
+    """
+    unit = TJRJ.source_units[3]
+    assert advance(ProcessNumber(0, 1, 2021, 2, unit.code), tj=TJRJ) == ProcessNumber(
+        0, 2, 2021, 2, unit.code
+    )
+    assert advance(ProcessNumber(0, 99, 2021, 2, unit.code), tj=TJRJ) == ProcessNumber(
+        0, 0, 2021, 2, TJRJ.source_units[4].code
+    )
+
+
+def test_to_number_with_valid_input() -> None:
+    """
+    Tests if ID string's parts are correctly splitted. Does not check if format is correct.
+    """
+    assert to_number("0000000-11.2222.8.44.5555") == ProcessNumber(
+        number=0, digits=11, year=2222, tr_code=44, source_unit=5555
+    )
+
+
+def test_id_or_range_with_valid_input() -> None:
     """Tests if `id_or_range` handles valid inputs correctly."""
-    assert id_or_range("0") == "0"
-    assert id_or_range("0..1") == ("0", "1")
+    range_ = IdRange(ProcessNumber(0, 0, 0, 0, 0), ProcessNumber(1, 1, 1, 1, 1))
+    str_range = ("0000000-00.0000.8.00.0000", "0000001-01.0001.8.01.0001")
+
+    assert id_or_range(str_range[0]) == range_.start
+    assert id_or_range("..".join(str_range)) == range_
 
 
-def test_split_id_with_invalid_input():
+def test_split_id_with_invalid_input() -> None:
     """Tests if `id_or_range` handles invalid inputs correctly."""
     with pytest.raises(ValueError):
         id_or_range("0..1..2")
 
 
-def test_split_parts_with_valid_input():
-    """
-    Tests if ID string's parts are correctly splitted. Does not check if format is correct.
-    """
-    assert to_parts("1111.222.333333-4") == ["1111", "222", "333333", "4"]
-
-
-def test_cap_with_carry():
+def test_cap_with_carry() -> None:
     """Tests if `cap_with_carry` returns correct capped value and carry."""
     assert cap_with_carry(0, 10) == (0, 0)
     assert cap_with_carry(9, 10) == (9, 0)
@@ -44,68 +80,42 @@ def test_cap_with_carry():
     assert cap_with_carry(12, 5) == (2, 2)
 
 
-def test_all_from_with_valid_input():
+def test_all_from_with_valid_input() -> None:
     """Tests if `all_from` returns all process IDs in given ranges."""
-    assert list(all_from("1111.222.333333-4")) == ["1111.222.333333-4"]
+    processes = []
 
-    assert list(all_from(("0000.000.000000-0", "0000.000.000000-1"))) == [
-        "0000.000.000000-0",
-        "0000.000.000000-1",
-    ]
-    assert list(all_from(("1111.222.333333-4", "1111.222.333333-5"))) == [
-        "1111.222.333333-4",
-        "1111.222.333333-5",
-    ]
-    assert list(all_from(("1111.222.333333-4", "1111.222.333334-0"))) == [
-        "1111.222.333333-4",
-        "1111.222.333333-5",
-        "1111.222.333333-6",
-        "1111.222.333333-7",
-        "1111.222.333333-8",
-        "1111.222.333333-9",
-        "1111.222.333334-0",
-    ]
-    assert list(all_from(("1111.222.333333-4", "1111.222.333335-0"))) == [
-        "1111.222.333333-4",
-        "1111.222.333333-5",
-        "1111.222.333333-6",
-        "1111.222.333333-7",
-        "1111.222.333333-8",
-        "1111.222.333333-9",
-        "1111.222.333334-0",
-        "1111.222.333334-1",
-        "1111.222.333334-2",
-        "1111.222.333334-3",
-        "1111.222.333334-4",
-        "1111.222.333334-5",
-        "1111.222.333334-6",
-        "1111.222.333334-7",
-        "1111.222.333334-8",
-        "1111.222.333334-9",
-        "1111.222.333335-0",
-    ]
-    assert list(all_from(("1111.222.999999-9", "1111.223.000000-1"))) == [
-        "1111.222.999999-9",
-        "1111.223.000000-0",
-        "1111.223.000000-1",
-    ]
-    assert list(all_from(("1111.999.999999-9", "1112.000.000000-1"))) == [
-        "1111.999.999999-9",
-        "1112.000.000000-0",
-        "1112.000.000000-1",
-    ]
+    for digits in range(100):
+        processes.append(
+            ProcessNumber(number=1, digits=digits, year=3, tr_code=4, source_unit=5)
+        )
+
+    processes.append(
+        ProcessNumber(number=1, digits=0, year=3, tr_code=4, source_unit=6)
+    )
+
+    assert list(all_from(processes[0], tj=TJRJ)) == [processes[0]]
+
+    assert (
+        list(all_from(IdRange(processes[0], processes[1]), tj=TJRJ)) == processes[0:2]
+    )
+    assert (
+        list(all_from(IdRange(processes[5], processes[6]), tj=TJRJ)) == processes[5:7]
+    )
+    assert list(all_from(IdRange(processes[0], processes[-1]), tj=TJRJ)) == processes
 
 
-def test_all_from_with_invalid_input():
+def test_all_from_with_invalid_input() -> None:
     """Tests if invalid inputs for `all_from` are properly handled."""
-    with pytest.raises(ValueError):
-        list(all_from(("1111.222.333333-4",)))
-
     with pytest.raises(AssertionError):
-        list(all_from(("1111.222.333333-4", "1111.222.333333.0")))
+        list(
+            all_from(
+                IdRange(ProcessNumber(1, 2, 3, 4, 5), ProcessNumber(0, 0, 0, 0, 0)),
+                tj=TJRJ,
+            )
+        )
 
 
-def test_process_has_words_in_subject():
+def test_process_has_words_in_subject() -> None:
     """
     Tests if it is possible to check which words are present in a process's subject.
     """

@@ -7,19 +7,24 @@ from typing import Callable, Optional
 import aiohttp
 import jsonlines
 
-from .cache import DBProcess, CacheState, filter_cached, restore_ids, save_to_cache
+from .cache import CacheState, DBProcess, filter_cached, restore_ids, save_to_cache
 from .process import (
     REAL_ID_FIELD,
+    TJRJ,
     IdRange,
     Process,
+    ProcessNumber,
     all_from,
     get_process_id,
     has_words_in_subject,
+    make_cnj_code,
 )
 from .timing import report_time
 
-FilterFunction = Callable[[DBProcess], bool]
-DownloadFunction = Callable[[list[str], Path, Path, bool, FilterFunction], None]
+FilterFunction = Callable[[Process], bool]
+DownloadFunction = Callable[
+    [list[ProcessNumber], Path, Path, bool, FilterFunction], None
+]
 
 BASE_URLS = {
     "rj": (
@@ -39,38 +44,39 @@ def write_to_sink(items: list[Process], sink: Path, reason: str) -> None:
             f"  -> Total items: {len(items)}.\n"
             f"  -> Reason: {reason}."
         )
-        output_f.write_all(items)  # type: ignore
+        output_f.write_all(items)
 
 
 def write_cached_to_sink(
-    ids: list[str], sink: Path, cache_path: Path, filter_function: FilterFunction
-) -> tuple[list[str], list[str]]:
+    ids: list[ProcessNumber],
+    sink: Path,
+    cache_path: Path,
+    filter_function: FilterFunction,
+) -> list[ProcessNumber]:
     """
     Write only items with given IDs that are cached into the sink and returns
-    which are not and which are cached.
+    which are not cached.
     """
-    filtered, _ = report_time(filter_cached, ids, cache_path=cache_path)
+    filtered = report_time(filter_cached, ids, cache_path=cache_path).value
 
-    def to_list(constructor):
-        return lambda items: [constructor(item) for item in items]
-
-    ids, cached_ids = map(to_list(str), filtered)
+    def cache_filter(item: DBProcess) -> bool:
+        return filter_function(item.json)
 
     cached_items = restore_ids(
-        cache_path, list(cached_ids), filter_function=filter_function
+        cache_path,
+        list(filtered.cached),
+        filter_function=cache_filter,
     )
-
-    print(f"Cached_ids: {cached_ids}")
 
     write_to_sink(cached_items, sink=sink, reason="Cached")
 
-    return ids, cached_ids
+    return list(filtered.not_cached)
 
 
 # pylint: disable=invalid-name
 async def fetch_process(
     session: aiohttp.ClientSession,
-    id_: str,
+    id_: ProcessNumber,
     url: str,
     cache_path: Path,
     fetch_all_fields: bool = True,
@@ -81,6 +87,18 @@ async def fetch_process(
     the result is selected, failed on captcha or etc. Returns the process if it
     is selected, else returns `None`.
     """
+    from typing import Any
+
+    # TODO: Com a numeração em NNNNNNN.DD, mandar blocos em que cada NNNNNNN
+    # seja único e os DDs vão incrementando. Um processo encontrado é
+    # substituído por um novo no "backlog" de números, se o DD chegar em 99 e
+    # não for encontrado então ele é dado como não existente e é substituído
+    # por um novo processo.
+    # TODO: Dada a ideia acima, é possível criar um "parou aqui" para poder
+    # continuar o trabalho em momentos variados: basta salvar o último "batch"
+    # (conjunto de NNNNNNN's, DD's e OOOO's).
+
+    data: dict[str, Any]
     async with session.post(
         url,
         json={
@@ -131,7 +149,7 @@ async def fetch_process(
 
 
 def download_from_json(
-    ids: list[str],
+    ids: list[ProcessNumber],
     sink: Path,
     cache_path: Path,
     fetch_all_fields: bool = True,
@@ -149,11 +167,11 @@ def download_from_json(
     print(f"download_from_json({ids=})")
 
     if not force_fetch:
-        ids, _ = write_cached_to_sink(
+        ids = write_cached_to_sink(
             ids=ids, sink=sink, cache_path=cache_path, filter_function=filter_function
         )
 
-    async def fetch_all_processes(ids: list[str], step: int = 100) -> int:
+    async def fetch_all_processes(ids: list[ProcessNumber], step: int = 100) -> int:
         total = 0
         async with aiohttp.ClientSession(trust_env=True) as session:
             for start in range(0, len(ids), step):
@@ -196,28 +214,34 @@ def download_from_json(
                 )
         return total
 
-    from tj_scraper.timing import timeit
+    from time import time
 
-    total, ellapsed = timeit(asyncio.run, fetch_all_processes(ids))
+    start = time()
+    result = asyncio.run(fetch_all_processes(ids))
+    end = time()
+
+    total_items: int = result
+    ellapsed = end - start
+
     print(
         f"""
         Finished.
             Ellapsed time:      {ellapsed:.2f}s
-            Request count:      {total}
-            Time/Request (avg): {ellapsed / max(total, 1):.2f}s
+            Request count:      {total_items}
+            Time/Request (avg): {ellapsed / max([total_items, 1]):.2f}s
         """
     )
 
 
 def download_from_html(
-    ids: list[str],
+    ids: list[ProcessNumber],
     sink: Path,
 ) -> None:
     """Downloads data by crawling through possible URLs. Warning: not updated"""
     from .html import TJRJSpider, run_spider
     from .url import build_tjrj_process_url
 
-    start_urls = [build_tjrj_process_url(id_) for id_ in ids]
+    start_urls = [build_tjrj_process_url(make_cnj_code(id_)) for id_ in ids]
     print(f"{start_urls=}")
 
     crawler_settings = {
@@ -235,7 +259,7 @@ def download_from_html(
 
 
 def download_all_with_ids(
-    ids: list[str],
+    ids: list[ProcessNumber],
     sink: Path,
     cache_path: Path,
     fetch_all_fields: bool = True,
@@ -263,7 +287,7 @@ def download_all_from_range(
     `id_range` and saves it into `sink`. Expects `sink` to be in JSONLines
     format.
     """
-    ids = all_from(id_range)
+    ids = all_from(id_range, tj=TJRJ)
     download_function(list(ids), sink, cache_path, fetch_all_fields, filter_function)
 
 
@@ -283,17 +307,12 @@ def processes_by_subject(
         print("Empty 'words'. Word filtering will not be applied.")
         filter_function = lambda _: True
 
-    all_from_range = set(all_from(id_range))
+    # TODO: Utilizar os OOOO segundo o arquivo `sheet` que vai ser versionado.
+    #       Reduz 4 dígitos da busca.
+    # TODO: Dígitos verificadores vão ser chutados e, achando um válido, já se
+    #       avança o número do processo. Reduz X% de 2 dígitos.
+    all_from_range = set(all_from(id_range, tj=TJRJ))
     ids = list(all_from_range)
-
-    print(f"Before: {ids=}")
-    # TODO: Checar isso, deveria escrever na cache só aqueles que não tem o
-    # assunto desejado.
-    # ids, cached_ids = write_cached_to_sink(ids, sink=output, cache_path=cache_path)
-    # print(f"After:\n    :: {ids=}\n    :: {cached_ids=}")
-
-    # for cached_id in cached_ids:
-    #     print(f"Ignoring {cached_id} -- Cached")
 
     download_all_with_ids(
         ids,

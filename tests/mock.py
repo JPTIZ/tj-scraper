@@ -1,24 +1,19 @@
-"""Pytest conftest file."""
+"""Mocked data for unit tests."""
 from pathlib import Path
 from typing import Mapping
 
 
 CACHE_PATH = Path("cache_tests.db")
-LOCAL_URL = (
-    "https://www3.tjrj.jus.br/consultaprocessual/api/processos/por-numero/publica"
-)
-REAL_IDS = {
-    "1": "2021.001.150000-1",
-    "2": "2021.001.150000-2",
-    "3": "2021.001.150000-3",
-    "4": "2021.001.150000-4",
+LOCAL_URLS = {
+    "rj": "https://www3.tjrj.jus.br/consultaprocessual/api/processos/por-numero/publica",
 }
+
 Object = Mapping[str, str]
-MOCK_DB: Mapping[str, Mapping[str, str | list[Object]]] = {
+MOCKED_TJRJ_BACKEND_DB: Mapping[str, Mapping[str, str | list[Object]]] = {
     "1": {
         "cidade": "Rio de Janeiro",
-        "codCnj": "0000000-11.2021.4.55.6666",
-        "codProc": REAL_IDS["1"],
+        "codCnj": "0000001-00.2021.8.19.0001",
+        "codProc": "2021.001.150000-1",
         "dataDis": "01/01/2021",
         "idProc": "1",
         "txtAssunto": "Furto  (Art. 155 - CP)",
@@ -39,16 +34,22 @@ MOCK_DB: Mapping[str, Mapping[str, str | list[Object]]] = {
     },
     "2": {
         "idProc": "2",
-        "codProc": REAL_IDS["2"],
+        "codCnj": "0000002-00.2021.8.19.0001",
+        "codProc": "2021.001.150000-2",
     },
     "3": {
         "idProc": "3",
-        "codProc": REAL_IDS["3"],
+        "codCnj": "0000003-00.2021.8.19.0001",
+        "codProc": "2021.001.150000-3",
         "txtAssunto": "Furto (Art. 155 - CP), § 1º E Receptação (Art. 180 - Cp)",
     },
     "4": {
         "idProc": "4",
-        "codProc": REAL_IDS["4"],
+        "codCnj": "0000004-00.2021.8.19.0001",
+        "codProc": "2021.001.150000-4",
         "txtAssunto": "Furto (Art. 155 - CP), § 1º E Receptação (Art. 180 - Cp)",
     },
 }
+
+REAL_IDS = {k: str(v["codProc"]) for k, v in MOCKED_TJRJ_BACKEND_DB.items()}
+CNJ_IDS = {k: str(v["codCnj"]) for k, v in MOCKED_TJRJ_BACKEND_DB.items()}
