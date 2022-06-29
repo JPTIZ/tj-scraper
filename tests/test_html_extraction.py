@@ -5,11 +5,7 @@ from typing import Generator, TypedDict
 import jsonlines
 import pytest
 
-from tj_scraper.html import (
-    run_spider,
-    TJRJSpider,
-)
-
+from tj_scraper.html import TJRJSpider, run_spider
 
 Object = dict[str, str]
 

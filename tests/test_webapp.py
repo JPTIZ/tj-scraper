@@ -7,20 +7,18 @@ from pathlib import Path
 from typing import Generator
 
 import pytest
+from aioresponses import aioresponses
 from flask import Flask
 from flask.testing import FlaskClient
-from aioresponses import aioresponses
 
-from tj_scraper.cache import load_all
-from tj_scraper.process import Process
+from tj_scraper.process import ProcessJSON
 from tj_scraper.webapp import make_webapp
 
-from . import CACHE_PATH, MOCK_DB, REAL_IDS
-from .fixtures import local_tj, results_sink
-from .helpers import ignore_unused, has_same_entries, reverse_lookup
+from .fixtures import results_sink
+from .helpers import has_same_entries, ignore_unused, reverse_lookup
+from .mock import CNJ_IDS, MOCKED_TJRJ_BACKEND_DB, REAL_IDS
 
-
-ignore_unused(local_tj, results_sink, reason="Fixtures")
+ignore_unused(results_sink, reason="Fixtures.")
 
 
 @pytest.fixture
@@ -38,32 +36,6 @@ def client(webapp: Flask) -> FlaskClient:
     return webapp.test_client()
 
 
-import _pytest.fixtures
-
-
-# TODO: Put these common function/fixtures in a common place.
-@pytest.fixture(autouse=True)
-def show_cache_state(
-    request: _pytest.fixtures.FixtureRequest,
-) -> Generator[None, None, None]:
-    """Shows current cache state when a test fails."""
-    from pprint import pprint
-
-    yield
-
-    if request.node.rep_call.failed:
-        print("Download test failed. Cache state:")
-        try:
-            state = {
-                i: {"ID": i, "CacheState": s, "Assunto": a, "JSON": v}
-                for (i, s, a, v) in load_all(cache_path=CACHE_PATH)
-            }
-            pprint(state, depth=3)
-        except Exception as error:  # pylint: disable=broad-except
-            print(" [ Failed to fetch cache state. ]")
-            print(f" [ Reason: {error}. ]")
-
-
 def retrieve_data(results_sink: Path) -> list[dict[str, str]]:
     """Retrieves data collected stored in sink."""
     import jsonlines
@@ -79,19 +51,19 @@ def test_sanity(client: FlaskClient) -> None:
     """
     ignore_unused(client)
 
-    expected = MOCK_DB.values()
+    expected = MOCKED_TJRJ_BACKEND_DB.values()
 
     response = client.get(
         "/buscar",
         query_string={
-            "intervalo_inicio": "2021.001.150000-0",
-            "intervalo_fim": "2021.001.150000-4",
+            "intervalo_inicio": "0000000-00.2021.8.19.0001",
+            "intervalo_fim": "0000004-00.2021.8.19.0001",
             "assunto": "",
             "tipo_download": "json",
         },
     )
 
-    data: list[Process] = json.loads(response.data.decode("utf-8"))
+    data: list[ProcessJSON] = json.loads(response.data.decode("utf-8"))
 
     assert has_same_entries(data, expected)
 
@@ -99,13 +71,13 @@ def test_sanity(client: FlaskClient) -> None:
 def test_same_request_twice(client: FlaskClient) -> None:
     ignore_unused(client)
 
-    expected = MOCK_DB.values()
+    expected = MOCKED_TJRJ_BACKEND_DB.values()
 
     response = client.get(
         "/buscar",
         query_string={
-            "intervalo_inicio": "2021.001.150000-0",
-            "intervalo_fim": "2021.001.150000-4",
+            "intervalo_inicio": "0000000-00.2021.8.19.0001",
+            "intervalo_fim": "0000004-00.2021.8.19.0001",
             "assunto": "",
             "tipo_download": "json",
         },
@@ -114,8 +86,8 @@ def test_same_request_twice(client: FlaskClient) -> None:
     response = client.get(
         "/buscar",
         query_string={
-            "intervalo_inicio": "2021.001.150000-0",
-            "intervalo_fim": "2021.001.150000-4",
+            "intervalo_inicio": "0000000-00.2021.8.19.0001",
+            "intervalo_fim": "0000004-00.2021.8.19.0001",
             "assunto": "",
             "tipo_download": "json",
         },
@@ -130,7 +102,7 @@ def test_request_two_non_overlapping_returns_only_wanted(client: FlaskClient) ->
     ignore_unused(client)
 
     expected = [
-        MOCK_DB[reverse_lookup(REAL_IDS, id_) or id_]
+        MOCKED_TJRJ_BACKEND_DB[reverse_lookup(REAL_IDS, id_) or id_]
         for id_ in [
             "2021.001.150000-1",
             "2021.001.150000-2",
@@ -141,8 +113,8 @@ def test_request_two_non_overlapping_returns_only_wanted(client: FlaskClient) ->
     response = client.get(
         "/buscar",
         query_string={
-            "intervalo_inicio": "2021.001.150000-0",
-            "intervalo_fim": "2021.001.150000-3",
+            "intervalo_inicio": "0000000-00.2021.8.19.0001",
+            "intervalo_fim": "0000003-00.2021.8.19.0001",
             "assunto": "",
             "tipo_download": "json",
         },
@@ -153,7 +125,7 @@ def test_request_two_non_overlapping_returns_only_wanted(client: FlaskClient) ->
     assert has_same_entries(data, expected)
 
     expected = [
-        MOCK_DB[reverse_lookup(REAL_IDS, id_) or id_]
+        MOCKED_TJRJ_BACKEND_DB[reverse_lookup(REAL_IDS, id_) or id_]
         for id_ in [
             "2021.001.150000-4",
         ]
@@ -162,8 +134,8 @@ def test_request_two_non_overlapping_returns_only_wanted(client: FlaskClient) ->
     response = client.get(
         "/buscar",
         query_string={
-            "intervalo_inicio": "2021.001.150000-4",
-            "intervalo_fim": "2021.001.150000-4",
+            "intervalo_inicio": "0000004-00.2021.8.19.0001",
+            "intervalo_fim": "0000004-00.2021.8.19.0001",
             "assunto": "",
             "tipo_download": "json",
         },

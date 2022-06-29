@@ -11,7 +11,7 @@ from scrapy.http import Response
 from twisted.internet import reactor
 
 from .errors import InvalidProcessNumber
-from .process import Process
+from .process import ProcessJSON
 from .url import build_tjrj_process_url
 
 
@@ -91,7 +91,7 @@ class TJRJSpider(Spider):  # type: ignore
     name = "tjrj-spider"
     start_urls = [build_process_url("2007.001.209836-2")]
 
-    def parse(self, response: Response, **_: Any) -> Generator[Process, None, None]:
+    def parse(self, response: Response, **_: Any) -> Generator[ProcessJSON, None, None]:
         process_id, page_content = extract_page_content(response)
 
         yield {

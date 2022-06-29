@@ -6,7 +6,7 @@ from typing import Optional
 from typer import Argument, Exit, Option, Typer
 
 from .download import download_from_html, download_from_json, processes_by_subject
-from .process import id_or_range, IdRange, ProcessNumber
+from .process import CNJProcessNumber, IdRange, id_or_range
 
 
 def make_app() -> Typer:
@@ -129,7 +129,7 @@ def make_app() -> Typer:
             DownloadModes.JSON: download_from_json,
         }[mode]
 
-        if isinstance(id_range_ := id_or_range(id_range), ProcessNumber):
+        if isinstance(id_range_ := id_or_range(id_range), CNJProcessNumber):
             id_range_ = IdRange(id_range_, id_range_)
 
         processes_by_subject(
