@@ -8,7 +8,13 @@ from typing import Any, Callable, Mapping, Optional
 
 import jsonlines
 
-from .process import Process, ProcessNumber, get_process_id, make_cnj_code, to_number
+from .process import (
+    CNJProcessNumber,
+    ProcessJSON,
+    get_process_id,
+    make_cnj_code,
+    to_cnj_number,
+)
 
 
 class CacheState(Enum):
@@ -31,20 +37,29 @@ class DBProcess:
 
     id_: str
     cache_state: CacheState
-    assunto: str
+    subject: str
     json: Mapping[str, Any]
 
 
 def create_database(path: Path) -> None:
-    """Creates database file and its tables."""
+    """Creates database file and its tables.
+
+    Process table's fields description:
+    - id: CNJ process number.
+    - local_id: ID used locally in process' TJ.
+    - cache_state: Relative to `CacheState`.
+    - subject: Quick-access to process's subject field.
+    - json: Process data in JSON format as returned by TJ server.
+    """
     with sqlite3.connect(path) as connection:
         cursor = connection.cursor()
         cursor.execute(
             """
             create table Processos (
                 id text primary key,
+                local_id text,
                 cache_state text,
-                assunto text,
+                subject text,
                 json text
             );
             """
@@ -72,7 +87,7 @@ def quickfix_db_id_to_real_id(cache_path: Path) -> None:
 
 
 def save_to_cache(
-    item: Process, cache_path: Path, state: CacheState = CacheState.CACHED
+    item: ProcessJSON, cache_path: Path, state: CacheState = CacheState.CACHED
 ) -> None:
     """Caches (saves) an item into a database of known items."""
     if not cache_path.exists():
@@ -84,7 +99,7 @@ def save_to_cache(
         cursor = connection.cursor()
         cursor.execute(
             """
-            insert or ignore into Processos(id, cache_state, assunto, json)
+            insert or ignore into Processos(id, cache_state, subject, json)
             values(?, ?, ?, ?)
             """,
             (
@@ -96,11 +111,11 @@ def save_to_cache(
         )
 
 
-def restore_ids(
+def restore_json_for_ids(
     cache_path: Path,
-    ids: list[ProcessNumber],
+    ids: list[CNJProcessNumber],
     filter_function: Callable[[DBProcess], bool],
-) -> list[Process]:
+) -> list[ProcessJSON]:
     """
     Loads specific processes from cache with given IDs.
     """
@@ -108,14 +123,14 @@ def restore_ids(
         raise FileNotFoundError(cache_path)
 
     def is_id_in_list(id_: str) -> bool:
-        result = to_number(id_) in ids
+        result = to_cnj_number(id_) in ids
         print(f":: Restoring IDs: {id_} is in {ids}? {result}")
         return result
 
-    def custom_filter(id_: str, state: CacheState, assunto: str, json_str: str) -> bool:
+    def custom_filter(id_: str, state: CacheState, subject: str, json_str: str) -> bool:
         try:
             process = DBProcess(
-                id_, cache_state=state, assunto=assunto, json=json.loads(json_str)
+                id_, cache_state=state, subject=subject, json=json.loads(json_str)
             )
             result = filter_function(process)
             print(f"::              : {id_} passes custom filter? {result}")
@@ -134,7 +149,7 @@ def restore_ids(
             for item_json, in cursor.execute(
                 "select json from Processos"
                 " where is_in_list(id)"
-                " and custom_filter(id, cache_state, assunto, json)",
+                " and custom_filter(id, cache_state, subject, json)",
             )
         ]
 
@@ -143,9 +158,9 @@ def restore_ids(
 
 def restore(
     cache_path: Path,
-    exclude_ids: Optional[list[ProcessNumber]] = None,
+    exclude_ids: Optional[list[CNJProcessNumber]] = None,
     with_subject: Optional[list[str]] = None,
-) -> list[Process]:
+) -> list[ProcessJSON]:
     """
     Loads cached data.
     """
@@ -160,7 +175,7 @@ def restore(
 
         extra = ""
         for word in with_subject:
-            extra += f" and upper(assunto) like '%{word.upper()}%'"
+            extra += f" and upper(subject) like '%{word.upper()}%'"
 
         return list(
             json.loads(item_json)
@@ -226,12 +241,12 @@ def load_metadata(cache_path: Path) -> CacheMetadata:
 
 @dataclass
 class Filtered:
-    not_cached: set[ProcessNumber]
-    cached: set[ProcessNumber]
-    invalid: set[ProcessNumber]
+    not_cached: set[CNJProcessNumber]
+    cached: set[CNJProcessNumber]
+    invalid: set[CNJProcessNumber]
 
 
-def filter_cached(ids: list[ProcessNumber], cache_path: Path) -> Filtered:
+def filter_cached(ids: list[CNJProcessNumber], cache_path: Path) -> Filtered:
     """
     Filters IDs that are already cached. Returns a tuple with uncached and
     cached ids, respectively.
@@ -243,14 +258,15 @@ def filter_cached(ids: list[ProcessNumber], cache_path: Path) -> Filtered:
     cached_ids = {
         cached_id
         for raw_cached_id, state in cache.states.items()
-        if state == CacheState.CACHED and (cached_id := to_number(raw_cached_id)) in ids
+        if state == CacheState.CACHED
+        and (cached_id := to_cnj_number(raw_cached_id)) in ids
     }
 
     invalid_ids = {
         cached_id
         for raw_cached_id, state in cache.states.items()
         if state == CacheState.INVALID
-        and (cached_id := to_number(raw_cached_id)) in ids
+        and (cached_id := to_cnj_number(raw_cached_id)) in ids
     }
 
     filtered_ids = set(ids) - (cached_ids | invalid_ids)
@@ -268,9 +284,9 @@ def load_all(cache_path: Path) -> list[tuple[str, str, str, dict[str, Any]]]:
         cursor = connection.cursor()
 
         return [
-            (id_, cache_state, assunto, json.loads(item_json))
-            for id_, cache_state, assunto, item_json, in cursor.execute(
-                "select id, cache_state, assunto, json from Processos",
+            (id_, cache_state, subject, json.loads(item_json))
+            for id_, cache_state, subject, item_json, in cursor.execute(
+                "select id, cache_state, subject, json from Processos",
             )
         ]
     return []

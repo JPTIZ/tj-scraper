@@ -7,7 +7,7 @@ from flask.wrappers import Response as FlaskResponse
 from werkzeug.wrappers.response import Response as WerkzeugResponse
 
 from .cache import jsonl_reader, restore
-from .process import IdRange, ProcessNumber, TJRJ, all_from, to_number
+from .process import TJRJ, CNJProcessNumber, IdRange, all_from, to_cnj_number
 
 Response = Union[str, tuple[str | FlaskResponse | WerkzeugResponse, int]]
 
@@ -31,7 +31,7 @@ Response = Union[str, tuple[str | FlaskResponse | WerkzeugResponse, int]]
 # sobrecarregar o servidor só para mostrar alguns processos.
 
 
-def make_intervals(known_ids: list[ProcessNumber]) -> list[IdRange]:
+def make_intervals(known_ids: list[CNJProcessNumber]) -> list[IdRange]:
     """
     Creates a list of (start, end) intervals of sequential IDs in `known_ids`.
     """
@@ -70,7 +70,7 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
     @app.route("/")
     def _root() -> Response:
         known_ids = [
-            to_number(str(item.get("codProc"))) for item in restore(cache_path)
+            to_cnj_number(str(item.get("codProc"))) for item in restore(cache_path)
         ]
         intervals = report_time(make_intervals, known_ids).value
 
@@ -84,7 +84,7 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
                 intervals = json.load(file_)
         elif cache_path.exists():
             known_ids = [
-                to_number(str(item.get("codProc"))) for item in restore(cache_path)
+                to_cnj_number(str(item.get("codProc"))) for item in restore(cache_path)
             ]
             print("Making intervals...")
             intervals = make_intervals(known_ids)
@@ -113,7 +113,7 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
                 400,
             )
 
-        id_range = IdRange(to_number(start_arg), to_number(end_arg))
+        id_range = IdRange(to_cnj_number(start_arg), to_cnj_number(end_arg))
         subject = ""
 
         from tempfile import NamedTemporaryFile

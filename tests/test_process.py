@@ -2,28 +2,28 @@
 import pytest
 
 from tj_scraper.process import (
-    IdRange,
-    ProcessNumber,
     TJRJ,
+    CNJProcessNumber,
+    IdRange,
+    advance,
     all_from,
     cap_with_carry,
     has_words_in_subject,
     id_or_range,
     make_cnj_code,
-    advance,
-    to_number,
+    to_cnj_number,
 )
 
 
 def test_make_cnj_code() -> None:
     """Tests if CNJ number is properly generated."""
     assert (
-        make_cnj_code(ProcessNumber(0, 1, 2021, TJRJ.code, 3))
-        == "000000-01.2021.8.19.0003"
+        make_cnj_code(CNJProcessNumber(0, 1, 2021, TJRJ.code, 3))
+        == "0000000-01.2021.8.19.0003"
     )
     assert (
-        make_cnj_code(ProcessNumber(1234, 20, 2021, TJRJ.code, 45))
-        == "001234-20.2021.8.19.0045"
+        make_cnj_code(CNJProcessNumber(1234, 20, 2021, TJRJ.code, 45))
+        == "0001234-20.2021.8.19.0045"
     )
 
 
@@ -33,26 +33,26 @@ def test_advance_process_number() -> None:
     works as expected.
     """
     unit = TJRJ.source_units[3]
-    assert advance(ProcessNumber(0, 1, 2021, 2, unit.code), tj=TJRJ) == ProcessNumber(
-        0, 2, 2021, 2, unit.code
-    )
-    assert advance(ProcessNumber(0, 99, 2021, 2, unit.code), tj=TJRJ) == ProcessNumber(
-        0, 0, 2021, 2, TJRJ.source_units[4].code
-    )
+    assert advance(
+        CNJProcessNumber(0, 1, 2021, 2, unit.code), tj=TJRJ
+    ) == CNJProcessNumber(0, 2, 2021, 2, unit.code)
+    assert advance(
+        CNJProcessNumber(0, 99, 2021, 2, unit.code), tj=TJRJ
+    ) == CNJProcessNumber(0, 0, 2021, 2, TJRJ.source_units[4].code)
 
 
 def test_to_number_with_valid_input() -> None:
     """
     Tests if ID string's parts are correctly splitted. Does not check if format is correct.
     """
-    assert to_number("0000000-11.2222.8.44.5555") == ProcessNumber(
+    assert to_cnj_number("0000000-11.2222.8.44.5555") == CNJProcessNumber(
         number=0, digits=11, year=2222, tr_code=44, source_unit=5555
     )
 
 
 def test_id_or_range_with_valid_input() -> None:
     """Tests if `id_or_range` handles valid inputs correctly."""
-    range_ = IdRange(ProcessNumber(0, 0, 0, 0, 0), ProcessNumber(1, 1, 1, 1, 1))
+    range_ = IdRange(CNJProcessNumber(0, 0, 0, 0, 0), CNJProcessNumber(1, 1, 1, 1, 1))
     str_range = ("0000000-00.0000.8.00.0000", "0000001-01.0001.8.01.0001")
 
     assert id_or_range(str_range[0]) == range_.start
@@ -86,11 +86,11 @@ def test_all_from_with_valid_input() -> None:
 
     for digits in range(100):
         processes.append(
-            ProcessNumber(number=1, digits=digits, year=3, tr_code=4, source_unit=5)
+            CNJProcessNumber(number=1, digits=digits, year=3, tr_code=4, source_unit=5)
         )
 
     processes.append(
-        ProcessNumber(number=1, digits=0, year=3, tr_code=4, source_unit=6)
+        CNJProcessNumber(number=1, digits=0, year=3, tr_code=4, source_unit=6)
     )
 
     assert list(all_from(processes[0], tj=TJRJ)) == [processes[0]]
@@ -109,7 +109,9 @@ def test_all_from_with_invalid_input() -> None:
     with pytest.raises(AssertionError):
         list(
             all_from(
-                IdRange(ProcessNumber(1, 2, 3, 4, 5), ProcessNumber(0, 0, 0, 0, 0)),
+                IdRange(
+                    CNJProcessNumber(1, 2, 3, 4, 5), CNJProcessNumber(0, 0, 0, 0, 0)
+                ),
                 tj=TJRJ,
             )
         )
