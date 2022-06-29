@@ -4,12 +4,12 @@ from pathlib import Path
 
 import openpyxl
 
-from .process import Object, Process
+from .process import Object, ProcessJSON
 
 
 def select_fields(
-    processes: Collection[Process], fields: Collection[str]
-) -> Collection[Process]:
+    processes: Collection[ProcessJSON], fields: Collection[str]
+) -> Collection[ProcessJSON]:
     """
     Returns a new collection of process containing only fields described in
     `fields.`
@@ -17,7 +17,7 @@ def select_fields(
     return [{k: v for k, v in process.items() if k in fields} for process in processes]
 
 
-def flatten(process_: Process) -> dict[str, str]:
+def flatten(process_: ProcessJSON) -> dict[str, str]:
     """Normalizes a process info from JSON to a simple string -> string mapping."""
     # Info that is not in input
     process = dict(process_)
@@ -85,7 +85,7 @@ def flatten(process_: Process) -> dict[str, str]:
     return result
 
 
-def prepare_to_export(raw_data: Collection[Process]) -> list[Object]:
+def prepare_to_export(raw_data: Collection[ProcessJSON]) -> list[Object]:
     """Rearranges data to be in a format easy to iter and export."""
     raw_data = select_fields(
         raw_data,
@@ -105,7 +105,7 @@ def prepare_to_export(raw_data: Collection[Process]) -> list[Object]:
     return [item for item in data if item]
 
 
-def export_to_xlsx(raw_data: Collection[Process], path: Path) -> None:
+def export_to_xlsx(raw_data: Collection[ProcessJSON], path: Path) -> None:
     """Exports data into a XLSX file."""
     data = prepare_to_export(raw_data)
 

@@ -2,10 +2,14 @@
 from collections.abc import Collection
 from typing import Any, Optional, TypeVar
 
-from tj_scraper.process import get_process_id, Process
+import pytest
+
+from tj_scraper.process import ProcessJSON, get_process_id
 
 
-def has_same_entries(lhs: Collection[Process], rhs: Collection[Process]) -> bool:
+def has_same_entries(
+    lhs: Collection[ProcessJSON], rhs: Collection[ProcessJSON]
+) -> bool:
     """
     Checks if `lhs` and `rhs` contain the same entries even if they're on
     different positions.

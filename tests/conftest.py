@@ -2,16 +2,20 @@
 from pathlib import Path
 from typing import Any, Generator
 
+import _pytest.fixtures
 import pluggy
 import pytest
-
-from _pytest.fixtures import SubRequest
 from _pytest.python import Function
 from _pytest.runner import CallInfo
 
 from tj_scraper.cache import load_all
 
-from . import CACHE_PATH
+pytest.register_assert_rewrite("tests.helpers")
+
+from .helpers import ignore_unused
+from .mock import CACHE_PATH, local_tj
+
+ignore_unused(local_tj)
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +32,7 @@ def cache_db() -> Generator[Path, None, None]:
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)  # type: ignore
 def pytest_runtest_makereport(
     item: Function, call: CallInfo[Any]
-) -> Generator[pluggy.callers._Result, None, None]:
+) -> Generator[None, pluggy.callers._Result, None]:
     """
     Ensures `request.node.rep_[setup,call,teardown]` from pytest is set to the
     respective stage result.
@@ -36,7 +40,8 @@ def pytest_runtest_makereport(
     _ = call
     # execute all other hooks to obtain the report object
     outcome = yield
-    rep = outcome.get_result()  # type: ignore
+    rep = outcome.get_result()
+    assert rep is not None
 
     # set a report attribute for each phase of a call, which can
     # be "setup", "call", "teardown"
@@ -44,8 +49,11 @@ def pytest_runtest_makereport(
     setattr(item, "rep_" + rep.when, rep)
 
 
+# TODO: Put these common function/fixtures in a common place.
 @pytest.fixture(autouse=True)
-def show_cache_state(request: SubRequest) -> Generator[None, None, None]:
+def show_cache_state(
+    request: _pytest.fixtures.FixtureRequest,
+) -> Generator[None, None, None]:
     """Shows current cache state when a test fails."""
     from pprint import pprint
 

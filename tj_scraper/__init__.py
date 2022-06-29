@@ -1,7 +1,7 @@
 """A package of tools for brazilian Tribunal de Justiça pages."""
-from importlib_metadata import version
+from typing import Callable, cast
 
-from typing import cast, Callable
+from importlib_metadata import version
 
 _version = cast(Callable[[str], str], version)
 
