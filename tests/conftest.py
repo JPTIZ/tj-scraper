@@ -32,7 +32,7 @@ def cache_db() -> Generator[Path, None, None]:
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)  # type: ignore
 def pytest_runtest_makereport(
     item: Function, call: CallInfo[Any]
-) -> Generator[None, pluggy.callers._Result, None]:
+) -> Generator[None, pluggy._callers._Result, None]:
     """
     Ensures `request.node.rep_[setup,call,teardown]` from pytest is set to the
     respective stage result.
@@ -49,7 +49,6 @@ def pytest_runtest_makereport(
     setattr(item, "rep_" + rep.when, rep)
 
 
-# TODO: Put these common function/fixtures in a common place.
 @pytest.fixture(autouse=True)
 def show_cache_state(
     request: _pytest.fixtures.FixtureRequest,
