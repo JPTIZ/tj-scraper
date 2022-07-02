@@ -29,9 +29,17 @@ types-toml = "^0.10.4"
 pylint-fixme-info = "^1.0.3"
 types-Deprecated = "^1.2.8"
 isort = "^5.10.1"
+summon-tasks = "^0.2.0"
+summon-python = "0.2.1"
+
+[tool.summon.plugins.python]
+test-modules = ["tests"]
 
 [tool.poetry.extras]
 webapp = ["flask"]
+
+[tool.black]
+target-version = ["py310"]
 
 [tool.isort]
 profile = "black"
