@@ -17,17 +17,12 @@ jobs:
         run: pip install --user poetry
       - name: Install dependencies
         run: poetry install -E webapp
-      - name: Mypy
+      - name: Lint
         if: always()
-        run: poetry run mypy --ignore-missing-imports .
-      - name: Black
+        run: poetry run summon lint
+      - name: Check format
         if: always()
-        run: poetry run black --check --diff . --target-version py310
-      - name: Pylint
-        if: always()
-        run: |
-          poetry run pylint tj_scraper
-          poetry run pylint tests
+        run: poetry run summon format --check
       - name: Tests
         if: always()
-        run: poetry run pytest -vvv
+        run: poetry run summon test
