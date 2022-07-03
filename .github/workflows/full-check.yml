@@ -3,7 +3,8 @@ name: Full check
 on: [push]
 
 jobs:
-  full-check:
+  lint:
+    name: Check Lint and Format
     runs-on: ubuntu-latest
 
     steps:
@@ -23,6 +24,21 @@ jobs:
       - name: Check format
         if: always()
         run: poetry run summon format --check
+
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup Python 3.10.0
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.10.0
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Install poetry
+        run: pip install --user poetry
+      - name: Install dependencies
+        run: poetry install -E webapp
       - name: Tests
         if: always()
         run: poetry run summon test
