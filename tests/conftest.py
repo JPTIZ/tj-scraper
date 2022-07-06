@@ -10,8 +10,10 @@ from _pytest.runner import CallInfo
 
 from tj_scraper.cache import load_all
 
+# flake8: noqa: E402
 pytest.register_assert_rewrite("tests.helpers")
 
+# pylint: disable=wrong-import-position
 from .helpers import ignore_unused
 from .mock import CACHE_PATH, local_tj
 

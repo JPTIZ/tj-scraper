@@ -9,6 +9,8 @@ Args = ParamSpec("Args")
 
 @dataclass(frozen=True, slots=True)
 class Timed(Generic[Return]):
+    """Result of a function with its execution time in seconds."""
+
     value: Return
     time: float
 

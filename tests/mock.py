@@ -59,6 +59,7 @@ CNJ_IDS = {k: str(v["codCnj"]) for k, v in MOCKED_TJRJ_BACKEND_DB.items()}
 
 
 def select_fields(json_object: Mapping[str, Any], fields: list[str]) -> dict[str, Any]:
+    """Returns a new dictionary with only specified fields (keys)."""
     return {k: v for k, v in json_object.items() if k in fields}
 
 
@@ -73,8 +74,11 @@ def local_tj() -> Generator[aioresponses, None, None]:
     """
 
     def tjrj_cnj_callback(
-        _: Any, json: dict[str, Any] = {}, **kwargs: Any
+        _: Any, json: dict[str, Any] | None = None, **kwargs: Any
     ) -> CallbackResult:
+        _ = kwargs
+
+        json = json if json is not None else {}
         cnj_id = json["codCnj"]
         db_id = reverse_lookup(CNJ_IDS, cnj_id) if cnj_id is not None else None
         if db_id is not None:
@@ -91,8 +95,11 @@ def local_tj() -> Generator[aioresponses, None, None]:
         return CallbackResult(status=200, payload=payload)  # type: ignore
 
     def tjrj_main_callback(
-        _: Any, json: dict[str, Any] = {}, **kwargs: Any
+        _: Any, json: dict[str, Any] | None = None, **kwargs: Any
     ) -> CallbackResult:
+        _ = kwargs
+
+        json = json if json is not None else {}
         process_id = reverse_lookup(REAL_IDS, json["codigoProcesso"])
         payload = (
             MOCKED_TJRJ_BACKEND_DB[process_id]

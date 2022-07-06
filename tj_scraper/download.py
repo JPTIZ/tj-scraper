@@ -138,11 +138,13 @@ async def fetch_process(
                 return FetchFailReason.CAPTCHA
             case ([success] | success) if isinstance(success, dict):
                 print(
-                    f"Fetched process {cnj_number}: {success.get('txtAssunto', 'Sem Assunto')}"
+                    f"Fetched process {cnj_number}:"
+                    f" {success.get('txtAssunto', 'Sem Assunto')}"
                 )
                 return success
         raise UnknownTJResponse(
-            f"TJ-{tj.name.upper()} endpoint responded with unknown message format: {response}"
+            f"TJ-{tj.name.upper()} endpoint responded with unknown message format:"
+            f" {response}"
         )
 
     cnj_number_str = make_cnj_code(cnj_number)
@@ -329,7 +331,8 @@ def download_from_json(
                 partial_ids = [get_process_id(process) for process in processes]
 
                 print(
-                    f"Partial result: {partial_ids} ({filtered} filtered, {invalid} invalid)"
+                    f"Partial result: {partial_ids}"
+                    f" ({filtered} filtered, {invalid} invalid)"
                 )
                 total += len(processes)
             return total
@@ -417,13 +420,14 @@ def processes_by_subject(
     cache_path: Path,
 ) -> None:
     """Search for processes that contain the given words on its subject."""
-    filter_function: Callable[[ProcessJSON], bool]
+
+    def filter_function(item: ProcessJSON) -> bool:
+        return has_words_in_subject(item, list(words)) if words else True
+
     if words:
         print(f"Filtering by: {words}")
-        filter_function = lambda item: has_words_in_subject(item, list(words))
     else:
         print("Empty 'words'. Word filtering will not be applied.")
-        filter_function = lambda _: True
 
     # TODO: Utilizar os OOOO segundo o arquivo `sheet` que vai ser versionado.
     #       Reduz 4 dígitos da busca.

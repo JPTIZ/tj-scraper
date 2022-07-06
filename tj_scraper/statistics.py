@@ -9,15 +9,6 @@ from typing import Any, Callable, Generator, Iterable, ParamSpec, TypeVar
 
 import requests
 
-# import tj_scraper.download
-
-
-def qualquer_merda(*args: Any, **kwargs: Any) -> None:
-    print(f"qualquer_merda({args=}, {kwargs=})")
-
-
-# setattr(tj_scraper.download, "download_from_json", qualquer_merda)
-
 from tj_scraper.download import (
     FetchFailReason,
     FetchResult,
@@ -40,7 +31,19 @@ from tj_scraper.process import (
     iter_in_range,
     make_cnj_code,
     next_number,
+    to_cnj_number,
 )
+
+# import tj_scraper.download
+#
+#
+# def replacement_test(*args: Any, **kwargs: Any) -> None:
+#     print(f"replacement_test({args=}, {kwargs=})")
+#
+#
+# setattr(tj_scraper.download, "download_from_json", replacement_test)
+
+
 
 
 def fetch_process(
@@ -70,11 +73,13 @@ def fetch_process(
                 return FetchFailReason.CAPTCHA
             case ([success] | success) if isinstance(success, dict):
                 print(
-                    f"Fetched process {cnj_number}: {success.get('txtAssunto', 'Sem Assunto')}"
+                    f"Fetched process {cnj_number}:"
+                    f" {success.get('txtAssunto', 'Sem Assunto')}"
                 )
                 return success
         raise UnknownTJResponse(
-            f"TJ-{tj.name.upper()} endpoint responded with unknown message format: {response}"
+            f"TJ-{tj.name.upper()} endpoint responded with unknown message format:"
+            f" {response}"
         )
 
     cnj_number_str = make_cnj_code(cnj_number)
@@ -207,7 +212,8 @@ def download_from_json(
                 partial_ids = [get_process_id(process) for process in processes]
 
                 print(
-                    f"Partial result: {partial_ids} ({filtered} filtered, {invalid} invalid)"
+                    f"Partial result: {partial_ids}"
+                    f" ({filtered} filtered, {invalid} invalid)"
                 )
                 total += len(processes)
             return total
@@ -230,9 +236,6 @@ def download_from_json(
         """
     )
 
-
-# from .download import download_from_json
-from .process import to_cnj_number
 
 CACHE_PATH = Path("b.db")
 
@@ -316,7 +319,7 @@ def view_profile(path: Path) -> None:
         "<method 'poll' of 'select.poll' objects>",
     ]
 
-    network_time = -1
+    network_time = -1.0
     for network_io_key in network_io_keys:
         try:
             network_function_profile = function_profiles[network_io_key]
@@ -335,7 +338,7 @@ def view_profile(path: Path) -> None:
     stats.print_stats()
 
 
-if __name__ == "__main__":
+def main():
     ids = [
         to_cnj_number(number)
         for number in [
@@ -344,6 +347,7 @@ if __name__ == "__main__":
             # "0196091-26.2021.8.19.0001",
         ]
     ]
+    # flake8: noqa: e731
     function = lambda: download_from_json(
         ids=ids, sink=Path("a.jsonl"), cache_path=CACHE_PATH
     )
@@ -362,3 +366,7 @@ if __name__ == "__main__":
         print("👀 (início)")
         view_profile(STATS_PATH)
         print("👀 (fim)")
+
+
+if __name__ == "__main__":
+    main()

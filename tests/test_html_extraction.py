@@ -11,11 +11,14 @@ Object = dict[str, str]
 
 
 class Settings(TypedDict):
+    """Typing for Scrapy's settings dictionary."""
+
     FEEDS: dict[Path, Object]
     FEED_EXPORT_ENCODING: str
 
 
 def make_file_url(path: Path) -> str:
+    """Creates a file URL for given path."""
     return f"file://{path.resolve()}"
 
 
