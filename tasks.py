@@ -37,7 +37,7 @@ def watch(command: str) -> None:
     run(
         [
             "watchexec",
-            "--exts=py,toml"
+            "--exts=py,toml",
             "-r",
             "-c",
             "-s",
