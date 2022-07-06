@@ -1,10 +1,10 @@
 """Responsible for handling data downloading."""
+import asyncio
 import json
 from collections.abc import Collection
-from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from typing import Callable, Iterable, Optional, TypeVar
+from typing import Callable, Iterable, Sequence, TypedDict, TypeVar
 
 import aiohttp
 import jsonlines
@@ -16,6 +16,7 @@ from .cache import (
     restore_json_for_ids,
     save_to_cache,
 )
+from .errors import UnknownTJResponse
 from .process import (
     REAL_ID_FIELD,
     TJ,
@@ -24,7 +25,6 @@ from .process import (
     IdRange,
     ProcessJSON,
     TJInfo,
-    advance,
     all_from,
     get_process_id,
     has_words_in_subject,
@@ -35,9 +35,7 @@ from .process import (
 from .timing import report_time
 
 FilterFunction = Callable[[ProcessJSON], bool]
-DownloadFunction = Callable[
-    [list[CNJProcessNumber], Path, Path, bool, FilterFunction], None
-]
+DownloadFunction = Callable[[list[CNJProcessNumber], Path, Path, FilterFunction], None]
 
 
 T = TypeVar("T")
@@ -55,7 +53,7 @@ def chunks(iterable: Iterable[T], n: int) -> Iterable[list[T]]:
         yield chunk
 
 
-def write_to_sink(items: list[ProcessJSON], sink: Path, reason: str) -> None:
+def write_to_sink(items: Sequence[ProcessJSON], sink: Path, reason: str) -> None:
     """
     A quick wrapper to write all data into a sink file while reporting about
     it.
@@ -95,18 +93,21 @@ def write_cached_to_sink(
     return list(filtered.not_cached)
 
 
-class FetchResultType(Enum):
+class FetchFailReason(Enum):
     CAPTCHA = auto()
     FILTERED = auto()
     INVALID = auto()
     NOT_FOUND = auto()
-    SUCCESS = auto()
 
 
-@dataclass
-class FetchResult:
-    result_type: FetchResultType
-    process: Optional[ProcessJSON]
+FetchResult = FetchFailReason | ProcessJSON
+
+TJResponse = list[str] | ProcessJSON
+
+
+class TJRequestParams(TypedDict):
+    tipoProcesso: str
+    codigoProcesso: str
 
 
 # pylint: disable=invalid-name
@@ -120,68 +121,113 @@ async def fetch_process(
     the result is selected, failed on captcha or etc. Returns the process if it
     is selected, else returns `None`.
     """
-    from typing import Any
+    # TODO: É possível criar um "parou aqui" para poder continuar o trabalho em
+    # momentos variados: basta salvar o último "batch" (conjunto de NNNNNNN's,
+    # DD's e OOOO's).
 
-    # TODO: Com a numeração em NNNNNNN.DD, mandar blocos em que cada NNNNNNN
-    # seja único e os DDs vão incrementando. Um processo encontrado é
-    # substituído por um novo no "backlog" de números, se o DD chegar em 99 e
-    # não for encontrado então ele é dado como não existente e é substituído
-    # por um novo processo.
-    # TODO: Dada a ideia acima, é possível criar um "parou aqui" para poder
-    # continuar o trabalho em momentos variados: basta salvar o último "batch"
-    # (conjunto de NNNNNNN's, DD's e OOOO's).
+    def classify(response: TJResponse) -> FetchResult:
+        match response:
+            case ["O processo informado não foi encontrado."]:
+                return FetchFailReason.NOT_FOUND
+            case ["Número do processo inválido."]:
+                return FetchFailReason.INVALID
+            case {
+                "status": 412,
+                "mensagem": "Erro de validação do Recaptcha. Tente novamente.",
+            }:
+                return FetchFailReason.CAPTCHA
+            case ([success] | success) if isinstance(success, dict):
+                print(
+                    f"Fetched process {cnj_number}: {success.get('txtAssunto', 'Sem Assunto')}"
+                )
+                return success
+        raise UnknownTJResponse(
+            f"TJ-{tj.name.upper()} endpoint responded with unknown message format: {response}"
+        )
 
-    cnj_id_str = make_cnj_code(cnj_number)
+    cnj_number_str = make_cnj_code(cnj_number)
+
+    request_args = TJRequestParams(tipoProcesso="1", codigoProcesso=cnj_number_str)
 
     # cnj_endpoint
+    raw_response: TJResponse
     if tj.name == "rj":
         async with session.post(
             tj.cnj_endpoint,
-            json={
-                "codCnj": cnj_id_str,
-            },
+            json=request_args,
+            ssl=False,  # FIXME: Properly handle TJ's outdated certificate
         ) as response:
-            partial_data = json.loads(await response.text())
+            raw_response = json.loads(await response.text())
 
-        if partial_data == ["Número do processo inválido."]:
-            return FetchResult(result_type=FetchResultType.INVALID, process=None)
+        fetch_result = classify(raw_response)
 
-        local_id = partial_data["codProc"]
+        print(f"{request_args=} = {fetch_result}")
+
+        if isinstance(fetch_result, FetchFailReason):
+            return fetch_result
+
+        request_args = TJRequestParams(
+            tipoProcesso=str(fetch_result["tipoProcesso"]),
+            codigoProcesso=str(fetch_result["numProcesso"]),
+        )
     else:
-        local_id = cnj_id_str
+        request_args = TJRequestParams(tipoProcesso="1", codigoProcesso=cnj_number_str)
 
     # main_endpoint
-    data: dict[str, Any]
     async with session.post(
         tj.main_endpoint,
-        json={
-            "tipoProcesso": "1",
-            "codigoProcesso": local_id,
-        },
+        json=request_args,
         ssl=False,  # FIXME: Properly handle TJ's outdated certificate
     ) as response:
-        data = json.loads(await response.text())
+        raw_response = json.loads(await response.text())
 
-    match data:
-        case ["O processo informado não foi encontrado."]:
-            return FetchResult(result_type=FetchResultType.NOT_FOUND, process=None)
-        case ["Número do processo inválido."]:
-            return FetchResult(result_type=FetchResultType.INVALID, process=None)
-        case {
-            "status": 412,
-            "mensagem": "Erro de validação do Recaptcha. Tente novamente.",
-        }:
-            return FetchResult(result_type=FetchResultType.CAPTCHA, process=None)
+    return classify(raw_response)
 
-    print(f"Fetched process {cnj_number}: {data.get('txtAssunto', 'Sem Assunto')}")
-    return FetchResult(result_type=FetchResultType.SUCCESS, process=data)
+
+def classify_and_cache(
+    fetch_result: FetchResult,
+    cnj_number: CNJProcessNumber,
+    cache_path: Path,
+    filter_function: FilterFunction,
+) -> FetchResult:
+    cnj_id_str = make_cnj_code(cnj_number)
+
+    match fetch_result:
+        case FetchFailReason.INVALID:
+            print(f"{cnj_number}: Invalid -- Cached now")
+            save_to_cache(
+                {REAL_ID_FIELD: cnj_id_str},
+                cache_path,
+                state=CacheState.INVALID,
+            )
+        case FetchFailReason.NOT_FOUND:
+            print(f"{cnj_number}: Not found -- Cached now")
+            save_to_cache(
+                {REAL_ID_FIELD: cnj_id_str},
+                cache_path,
+                state=CacheState.INVALID,
+            )
+        case FetchFailReason.CAPTCHA:
+            print(f"{cnj_number}: Unfetched, failed on recaptcha.")
+        case FetchFailReason.FILTERED:
+            pass
+        case process:
+            save_to_cache(process, cache_path, state=CacheState.CACHED)
+
+            if not filter_function(process):
+                subject = process.get("txtAssunto", "Sem Assunto")
+                print(
+                    f"{cnj_number}: Filtered  -- ({subject}) -- Cached now ({process=})"
+                )
+                return FetchFailReason.FILTERED
+
+    return fetch_result
 
 
 def download_from_json(
     ids: list[CNJProcessNumber],
     sink: Path,
     cache_path: Path,
-    fetch_all_fields: bool = True,
     filter_function: FilterFunction = lambda _: True,
     # pylint: disable=dangerous-default-value
     tj_info: TJInfo = TJ_INFO,
@@ -191,8 +237,6 @@ def download_from_json(
     Downloads data from urls that return JSON values. Previously cached results
     are used by default if `force_fetch` is not set to `True`.
     """
-    import asyncio
-
     print(f"download_from_json({ids=})")
 
     if not force_fetch:
@@ -205,42 +249,6 @@ def download_from_json(
 
     tj_by_code = {tj.code: name for name, tj in tj_info.tjs.items()}
 
-    def classify_and_cache(
-        fetch_result: FetchResult, cnj_number: CNJProcessNumber
-    ) -> FetchResult:
-        cnj_id_str = make_cnj_code(cnj_number)
-
-        if fetch_result.result_type == FetchResultType.INVALID:
-            print(f"{cnj_number}: Invalid -- Cached now")
-            save_to_cache(
-                {REAL_ID_FIELD: cnj_id_str},
-                cache_path,
-                state=CacheState.INVALID,
-            )
-        elif fetch_result.result_type == FetchResultType.NOT_FOUND:
-            print(f"{cnj_number}: Not found -- Cached now")
-            save_to_cache(
-                {REAL_ID_FIELD: cnj_id_str},
-                cache_path,
-                state=CacheState.INVALID,
-            )
-        elif fetch_result.result_type == FetchResultType.CAPTCHA:
-            print(f"{cnj_number}: Unfetched, failed on recaptcha.")
-        elif fetch_result.process is not None:
-            save_to_cache(fetch_result.process, cache_path, state=CacheState.CACHED)
-
-        if fetch_result.process is not None and not filter_function(
-            fetch_result.process
-        ):
-            subject = fetch_result.process.get("txtAssunto", "Sem Assunto")
-            print(
-                f"{cnj_number}: Filtered  -- ({subject}) -- Cached now ({fetch_result.process=})"
-            )
-            return FetchResult(result_type=FetchResultType.FILTERED, process=None)
-
-        return fetch_result
-
-    # FIXME: lidar com dígito-verificador != 00
     async def fetch_and_eval(
         session: aiohttp.ClientSession,
         semaphore: asyncio.Semaphore,
@@ -278,12 +286,14 @@ def download_from_json(
                 guess,
                 tj=tj,
             )
-            if fetch_result.result_type == FetchResultType.SUCCESS:
+            if not isinstance(fetch_result, FetchFailReason):
                 break
 
         assert fetch_result is not None
 
-        fetch_result = classify_and_cache(fetch_result, cnj_number=cnj_number)
+        fetch_result = classify_and_cache(
+            fetch_result, cnj_number, cache_path, filter_function
+        )
 
         semaphore.release()
 
@@ -300,21 +310,21 @@ def download_from_json(
             )
             for i, batch in enumerate(chunks(requests, 1000), start=1):
                 print(f"\n--\n-- Wave: {i}")
-                results = await asyncio.gather(*batch)
-                processes = [
-                    result.process for result in results if result.process is not None
-                ]
+                results: Iterable[FetchResult] = await asyncio.gather(*batch)
+                processes = []
+                filtered = 0
+                invalid = 0
+                for result in results:
+                    match result:
+                        case FetchFailReason.FILTERED:
+                            filtered += 1
+                        case FetchFailReason.INVALID:
+                            invalid += 1
+                        case dict() as process:
+                            print(f"{process=}")
+                            processes.append(process)
 
                 write_to_sink(processes, sink, reason=f"Fetched (Batch {i})")
-
-                filtered = sum(
-                    1 if result.result_type == FetchResultType.FILTERED else 0
-                    for result in results
-                )
-                invalid = sum(
-                    1 if result.result_type == FetchResultType.INVALID else 0
-                    for result in results
-                )
 
                 partial_ids = [get_process_id(process) for process in processes]
 
@@ -372,7 +382,6 @@ def download_all_with_ids(
     ids: list[CNJProcessNumber],
     sink: Path,
     cache_path: Path,
-    fetch_all_fields: bool = True,
     filter_function: FilterFunction = lambda _: True,
     download_function: DownloadFunction = download_from_json,
 ) -> None:
@@ -381,14 +390,13 @@ def download_all_with_ids(
     it into `sink`. Expects `sink` to be in JSONLines format.
     """
     print(f"download_all_with_ids({ids=})")
-    download_function(ids, sink, cache_path, fetch_all_fields, filter_function)
+    download_function(ids, sink, cache_path, filter_function)
 
 
 def download_all_from_range(
     id_range: IdRange,
     sink: Path,
     cache_path: Path,
-    fetch_all_fields: bool = True,
     filter_function: FilterFunction = lambda _: True,
     download_function: DownloadFunction = download_from_json,
 ) -> None:
@@ -398,7 +406,7 @@ def download_all_from_range(
     format.
     """
     ids = all_from(id_range, tj=TJ_INFO.tjs["rj"])
-    download_function(list(ids), sink, cache_path, fetch_all_fields, filter_function)
+    download_function(list(ids), sink, cache_path, filter_function)
 
 
 def processes_by_subject(
