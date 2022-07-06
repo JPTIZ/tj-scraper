@@ -241,6 +241,8 @@ def load_metadata(cache_path: Path) -> CacheMetadata:
 
 @dataclass
 class Filtered:
+    """Result of filtering which IDs are cached or not."""
+
     not_cached: set[CNJProcessNumber]
     cached: set[CNJProcessNumber]
     invalid: set[CNJProcessNumber]

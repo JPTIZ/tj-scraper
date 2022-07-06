@@ -16,13 +16,14 @@ from tj_scraper.webapp import make_webapp
 
 from .fixtures import results_sink
 from .helpers import has_same_entries, ignore_unused, reverse_lookup
-from .mock import CNJ_IDS, MOCKED_TJRJ_BACKEND_DB, REAL_IDS
+from .mock import MOCKED_TJRJ_BACKEND_DB, REAL_IDS
 
 ignore_unused(results_sink, reason="Fixtures.")
 
 
 @pytest.fixture
 def webapp(local_tj: aioresponses, cache_db: Path) -> Generator[Flask, None, None]:
+    """Mocks a Flask webapp for tests."""
     ignore_unused(local_tj)
 
     webapp = make_webapp(cache_path=cache_db)
@@ -33,6 +34,7 @@ def webapp(local_tj: aioresponses, cache_db: Path) -> Generator[Flask, None, Non
 
 @pytest.fixture
 def client(webapp: Flask) -> FlaskClient:
+    """Mocks a Flask client from a Flask webapp."""
     return webapp.test_client()
 
 
@@ -69,6 +71,9 @@ def test_sanity(client: FlaskClient) -> None:
 
 
 def test_same_request_twice(client: FlaskClient) -> None:
+    """
+    Tests if making the exact same request twice gives the same result in both cases.
+    """
     ignore_unused(client)
 
     expected = MOCKED_TJRJ_BACKEND_DB.values()
@@ -99,6 +104,10 @@ def test_same_request_twice(client: FlaskClient) -> None:
 
 
 def test_request_two_non_overlapping_returns_only_wanted(client: FlaskClient) -> None:
+    """
+    Tests if requesting two non-overlapping IDs in sequence returns expected
+    result in both cases.
+    """
     ignore_unused(client)
 
     expected = [

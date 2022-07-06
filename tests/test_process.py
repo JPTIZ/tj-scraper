@@ -43,7 +43,8 @@ def test_advance_process_number() -> None:
 
 def test_to_number_with_valid_input() -> None:
     """
-    Tests if ID string's parts are correctly splitted. Does not check if format is correct.
+    Tests if ID string's parts are correctly splitted. Does not check if format
+    is correct.
     """
     assert to_cnj_number("0000000-11.2222.8.44.5555") == CNJProcessNumber(
         number=0, digits=11, year=2222, tr_code=44, source_unit=5555

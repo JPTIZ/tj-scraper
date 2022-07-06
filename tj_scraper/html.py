@@ -59,6 +59,7 @@ def extract_process_id(response: Response) -> str:
 
 
 def extract_field(response: Response, field_text: str) -> str:
+    """Extracts the value for a given process' field in page."""
     field_xpath = f"//td[text()='{field_text}:']/following-sibling::td/text()"
     return str(response.xpath(field_xpath).get()).strip()
 

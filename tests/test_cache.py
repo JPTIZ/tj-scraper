@@ -9,22 +9,25 @@ from tj_scraper.cache import CacheState, DBProcess, Filtered
 from tj_scraper.process import CNJProcessNumber, to_cnj_number
 
 from .helpers import reverse_lookup
-from .mock import CNJ_IDS, MOCKED_TJRJ_BACKEND_DB, REAL_IDS
+from .mock import CNJ_IDS, MOCKED_TJRJ_BACKEND_DB
 
 # pylint: disable=redefined-outer-name
 
 
 def make_number_set(numbers: set[str]) -> set[CNJProcessNumber]:
+    """Transforms a set of strings into a set of CNJ numbers."""
     return {to_cnj_number(number) for number in numbers}
 
 
 def make_number_list(numbers: Iterable[str]) -> list[CNJProcessNumber]:
+    """Transforms a list of strings into a list of CNJ numbers."""
     return [to_cnj_number(number) for number in numbers]
 
 
 def make_filtered(
     not_cached: set[str], cached: set[str], invalid: set[str]
 ) -> Filtered:
+    """Helper to create a Filtered object from sets of strings."""
     return Filtered(
         not_cached=make_number_set(not_cached),
         cached=make_number_set(cached),
@@ -107,7 +110,7 @@ def test_restore_ids_no_filter_function(cache_db: Path) -> None:
 
 def test_restore_ids_with_filter_function(cache_db: Path) -> None:
     """Tests if cache is able to filter IDs that are already cached."""
-    from tj_scraper.cache import CacheState, restore_json_for_ids, save_to_cache
+    from tj_scraper.cache import restore_json_for_ids, save_to_cache
 
     expected_ids = {CNJ_IDS["3"]}
 

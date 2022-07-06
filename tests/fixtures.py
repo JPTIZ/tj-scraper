@@ -13,7 +13,7 @@ def results_sink() -> Generator[Path, None, None]:
     sink.unlink(missing_ok=True)
 
 
-T = TypeVar("T")
+T = TypeVar("T")  # pylint: disable=invalid-name
 
 
 def flatten(list_of_lists: list[list[T]]) -> list[T]:

@@ -2,8 +2,6 @@
 from collections.abc import Collection
 from typing import Any, Optional, TypeVar
 
-import pytest
-
 from tj_scraper.process import ProcessJSON, get_process_id
 
 

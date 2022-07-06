@@ -8,12 +8,16 @@ from .errors import InvalidProcessNumber
 
 @dataclass
 class SourceUnit:
+    """Abstraction for "Unidade de Origem"."""
+
     name: str
     code: int
 
 
 @dataclass(frozen=True)
 class TJ:
+    """Info about a single TJ."""
+
     name: str
     code: int
     cnj_endpoint: str
@@ -23,10 +27,14 @@ class TJ:
 
 @dataclass
 class TJInfo:
+    """General info about TJs."""
+
     tjs: Mapping[str, TJ]
 
 
 class CNJProcessNumber(NamedTuple):
+    """A single process number in the format used in CNJ (Unified)."""
+
     number: int
     digits: int
     year: int
@@ -35,6 +43,8 @@ class CNJProcessNumber(NamedTuple):
 
 
 class TJRJProcessNumber(NamedTuple):
+    """A single process number in the format used in TJ-RJ."""
+
     year: int
     source_unit: int  # 3 digits
     number: int
@@ -42,6 +52,8 @@ class TJRJProcessNumber(NamedTuple):
 
 
 class IdRange(NamedTuple):
+    """A range of CNJ numbers."""
+
     start: CNJProcessNumber
     end: CNJProcessNumber
 
@@ -150,7 +162,14 @@ def all_from(
 
 
 def make_cnj_code(number: CNJProcessNumber) -> str:
-    return f"{number.number:07}-{number.digits:02}.{number.year:04}.8.{number.tr_code:02}.{number.source_unit:04}"
+    """Creates a string in expected CNJ number format."""
+    return (
+        f"{number.number:07}"
+        f"-{number.digits:02}"
+        f".{number.year:04}"
+        f".8.{number.tr_code:02}"
+        f".{number.source_unit:04}"
+    )
 
 
 def next_source_unit(number: CNJProcessNumber, tj: TJ) -> Optional[CNJProcessNumber]:
@@ -239,9 +258,10 @@ def has_words_in_subject(data: ProcessJSON, words: list[str]) -> bool:
 
 
 def load_tj_info(path: Path) -> TJInfo:
+    """Loads a TOML file containing information about TJs."""
     import toml
 
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         toml_contents = toml.load(f)
 
     return TJInfo(
