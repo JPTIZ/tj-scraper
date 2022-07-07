@@ -16,11 +16,11 @@ from tj_scraper.download import (
     TJRequestParams,
     TJResponse,
     chunks,
+    classify,
     classify_and_cache,
     write_cached_to_sink,
     write_to_sink,
 )
-from tj_scraper.errors import UnknownTJResponse
 from tj_scraper.process import (
     TJ,
     TJ_INFO,
@@ -44,8 +44,6 @@ from tj_scraper.process import (
 # setattr(tj_scraper.download, "download_from_json", replacement_test)
 
 
-
-
 def fetch_process(
     session: requests.Session,
     cnj_number: CNJProcessNumber,
@@ -59,28 +57,6 @@ def fetch_process(
     # TODO: É possível criar um "parou aqui" para poder continuar o trabalho em
     # momentos variados: basta salvar o último "batch" (conjunto de NNNNNNN's,
     # DD's e OOOO's).
-
-    def classify(response: TJResponse) -> FetchResult:
-        match response:
-            case ["O processo informado não foi encontrado."]:
-                return FetchFailReason.NOT_FOUND
-            case ["Número do processo inválido."]:
-                return FetchFailReason.INVALID
-            case {
-                "status": 412,
-                "mensagem": "Erro de validação do Recaptcha. Tente novamente.",
-            }:
-                return FetchFailReason.CAPTCHA
-            case ([success] | success) if isinstance(success, dict):
-                print(
-                    f"Fetched process {cnj_number}:"
-                    f" {success.get('txtAssunto', 'Sem Assunto')}"
-                )
-                return success
-        raise UnknownTJResponse(
-            f"TJ-{tj.name.upper()} endpoint responded with unknown message format:"
-            f" {response}"
-        )
 
     cnj_number_str = make_cnj_code(cnj_number)
 
@@ -96,7 +72,7 @@ def fetch_process(
         ) as response:
             raw_response = json.loads(response.text)
 
-        fetch_result = classify(raw_response)
+        fetch_result = classify(raw_response, cnj_number, tj)
 
         print(f"{request_args=} = {fetch_result}")
 
@@ -104,8 +80,8 @@ def fetch_process(
             return fetch_result
 
         request_args = TJRequestParams(
-            tipoProcesso=str(fetch_result["tipoProcesso"]),
-            codigoProcesso=str(fetch_result["numProcesso"]),
+            tipoProcesso=str(fetch_result.get("tipoProcesso")),
+            codigoProcesso=str(fetch_result.get("numProcesso")),
         )
     else:
         request_args = TJRequestParams(tipoProcesso="1", codigoProcesso=cnj_number_str)
@@ -118,7 +94,99 @@ def fetch_process(
     ) as response:
         raw_response = json.loads(response.text)
 
-    return classify(raw_response)
+    return classify(raw_response, cnj_number, tj)
+
+
+def fetch_and_eval(
+    session: requests.Session,
+    cnj_number: CNJProcessNumber,
+    tj_info: TJInfo,
+    cache_path: Path,
+    filter_function: FilterFunction,
+) -> FetchResult:
+    """
+    Attempts to fetch a process number by trying many combinations of
+    verification digits and source units.
+    """
+    tj_by_code = {tj.code: name for name, tj in tj_info.tjs.items()}
+
+    tj = tj_info.tjs[tj_by_code[cnj_number.tr_code]]
+
+    end = next_number(cnj_number)
+    if end is None:
+        end = CNJProcessNumber(
+            number=cnj_number.number,
+            digits=99,
+            year=cnj_number.year,
+            tr_code=cnj_number.tr_code,
+            source_unit=tj.source_units[-1].code,
+        )
+    test_range = IdRange(cnj_number, end)
+
+    fetch_result = None
+
+    for i, guess in enumerate(iter_in_range(test_range, tj=tj)):
+        fetch_result = fetch_process(
+            session,
+            guess,
+            tj=tj,
+        )
+        if not isinstance(fetch_result, FetchFailReason):
+            break
+
+        if i > 100:
+            break
+
+    assert fetch_result is not None
+
+    fetch_result = classify_and_cache(
+        fetch_result, cnj_number, cache_path, filter_function
+    )
+
+    return fetch_result
+
+
+def fetch_all_processes(
+    numbers: list[CNJProcessNumber],
+    tj_info: TJInfo,
+    cache_path: Path,
+    filter_function: FilterFunction,
+    sink: Path,
+) -> int:
+    """Fetches all processes with specified numbers."""
+    # pylint: disable=too-many-locals
+    total = 0
+    with requests.Session() as session:
+        requests_ = (
+            fetch_and_eval(session, number, tj_info, cache_path, filter_function)
+            for number in numbers
+        )
+        for i, batch in enumerate(chunks(requests_, 1000), start=1):
+            print(f"\n--\n-- Wave: {i}")
+            results: Iterable[FetchResult] = batch
+            processes = []
+            filtered = 0
+            invalid = 0
+            for result in results:
+                match result:
+                    case FetchFailReason.FILTERED:
+                        filtered += 1
+                    case FetchFailReason.INVALID:
+                        invalid += 1
+                    case dict() as process:
+                        print(f"{process=}")
+                        processes.append(process)
+
+            write_to_sink(processes, sink, reason=f"Fetched (Batch {i})")
+
+            partial_ids = [get_process_id(process) for process in processes]
+
+            print(
+                f"Partial result: {partial_ids}"
+                f" ({filtered} filtered, {invalid} invalid)"
+            )
+            total += len(processes)
+        return total
 
 
 def download_from_json(
@@ -134,8 +202,6 @@ def download_from_json(
     Downloads data from urls that return JSON values. Previously cached results
     are used by default if `force_fetch` is not set to `True`.
     """
-    import requests
-
     print(f"download_from_json({ids=})")
 
     if not force_fetch:
@@ -146,83 +212,11 @@ def download_from_json(
             filter_function=filter_function,
         )
 
-    tj_by_code = {tj.code: name for name, tj in tj_info.tjs.items()}
+    from time import time as current_time
 
-    def fetch_and_eval(
-        session: requests.Session,
-        cnj_number: CNJProcessNumber,
-    ) -> FetchResult:
-        tj = tj_info.tjs[tj_by_code[cnj_number.tr_code]]
-
-        end = next_number(cnj_number)
-        if end is None:
-            end = CNJProcessNumber(
-                number=cnj_number.number,
-                digits=99,
-                year=cnj_number.year,
-                tr_code=cnj_number.tr_code,
-                source_unit=tj.source_units[-1].code,
-            )
-        test_range = IdRange(cnj_number, end)
-
-        fetch_result = None
-
-        for i, guess in enumerate(iter_in_range(test_range, tj=tj)):
-            fetch_result = fetch_process(
-                session,
-                guess,
-                tj=tj,
-            )
-            if not isinstance(fetch_result, FetchFailReason):
-                break
-
-            if i > 100:
-                break
-
-        assert fetch_result is not None
-
-        fetch_result = classify_and_cache(
-            fetch_result, cnj_number, cache_path, filter_function
-        )
-
-        return fetch_result
-
-    def fetch_all_processes(numbers: list[CNJProcessNumber]) -> int:
-        total = 0
-        with requests.Session() as session:
-            requests_ = (fetch_and_eval(session, number) for number in numbers)
-            for i, batch in enumerate(chunks(requests_, 1000), start=1):
-                print(f"\n--\n-- Wave: {i}")
-                results: Iterable[FetchResult] = batch
-                processes = []
-                filtered = 0
-                invalid = 0
-                for result in results:
-                    match result:
-                        case FetchFailReason.FILTERED:
-                            filtered += 1
-                        case FetchFailReason.INVALID:
-                            invalid += 1
-                        case dict() as process:
-                            print(f"{process=}")
-                            processes.append(process)
-
-                write_to_sink(processes, sink, reason=f"Fetched (Batch {i})")
-
-                partial_ids = [get_process_id(process) for process in processes]
-
-                print(
-                    f"Partial result: {partial_ids}"
-                    f" ({filtered} filtered, {invalid} invalid)"
-                )
-                total += len(processes)
-            return total
-
-    from time import time
-
-    start = time()
-    result = fetch_all_processes(ids)
-    end = time()
+    start = current_time()
+    result = fetch_all_processes(ids, tj_info, cache_path, filter_function, sink)
+    end = current_time()
 
     total_items: int = result
     ellapsed = end - start
@@ -242,25 +236,25 @@ CACHE_PATH = Path("b.db")
 
 @contextmanager
 def autodelete(path: Path) -> Generator[Path, None, None]:
+    """Yields a path and then deletes it."""
     yield path
     path.unlink(missing_ok=True)
 
 
 @contextmanager
 def no_stdout() -> Generator[None, None, None]:
+    """Stops output for stdout."""
     import os
     import sys
 
-    # yield
-    # return
-
-    with open(os.devnull, "w") as devnull:
+    with open(os.devnull, "w") as devnull:  # pylint: disable=unspecified-encoding
         old_stdout, sys.stdout = sys.stdout, devnull
         yield
         sys.stdout = old_stdout
 
 
 def io_timer() -> float:
+    """Calculates time spent in IO."""
     import os
 
     timing = os.times()
@@ -268,8 +262,8 @@ def io_timer() -> float:
 
 
 def fake_download_from_json(*_: Any, **__: Any) -> None:
+    """Fake download function to test timing functions."""
     print("fake")
-    import time
 
     x: list[int] = []
     for i in range(100):
@@ -289,6 +283,7 @@ Args = ParamSpec("Args")
 
 
 def profile(function: Callable[Args, Any], timer: Timer | None) -> None:
+    """Measures execution time of a function. Time is calculated using `timer`."""
     timer_arg: dict[str, Any] = {"timer": timer} if timer is not None else {}
 
     profiler = cProfile.Profile(**timer_arg)
@@ -305,14 +300,17 @@ def profile(function: Callable[Args, Any], timer: Timer | None) -> None:
 
 
 def view_profile(path: Path) -> None:
+    """Shows previously profiled data."""
     stats = Stats(path.resolve().as_posix())
-    profile = stats.get_stats_profile()
+    profile_stats = stats.get_stats_profile()
     from pprint import pprint
 
-    total_time = profile.total_tt
-    function_profiles = profile.func_profiles
+    total_time = profile_stats.total_tt
+    function_profiles = profile_stats.func_profiles
 
-    pprint([value for key, value in profile.func_profiles.items() if "poll" in key])
+    pprint(
+        [value for key, value in profile_stats.func_profiles.items() if "poll" in key]
+    )
 
     network_io_keys = [
         "<method 'poll' of 'select.epoll' objects>",
@@ -339,6 +337,7 @@ def view_profile(path: Path) -> None:
 
 
 def main():
+    """Statistics generation."""
     ids = [
         to_cnj_number(number)
         for number in [
@@ -347,6 +346,7 @@ def main():
             # "0196091-26.2021.8.19.0001",
         ]
     ]
+    # pylint: disable=unnecessary-lambda-assignment
     # flake8: noqa: e731
     function = lambda: download_from_json(
         ids=ids, sink=Path("a.jsonl"), cache_path=CACHE_PATH
