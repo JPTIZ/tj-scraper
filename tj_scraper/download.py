@@ -30,7 +30,6 @@ from .process import (
     has_words_in_subject,
     iter_in_range,
     make_cnj_code,
-    next_number,
 )
 from .timing import report_time
 
@@ -280,7 +279,13 @@ def download_from_json(
     ) -> FetchResult:
         tj = tj_info.tjs[tj_by_code[cnj_number.tr_code]]
 
-        end = next_number(cnj_number)
+        end = CNJProcessNumber(
+            number=cnj_number.number,
+            digits=99,
+            year=cnj_number.year,
+            tr_code=cnj_number.tr_code,
+            source_unit=max(tj.source_units, key=lambda unit: unit.code).code,
+        )
         if end is None:
             end = CNJProcessNumber(
                 number=cnj_number.number,

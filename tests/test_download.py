@@ -61,6 +61,24 @@ def test_sanity(local_tj: Path) -> None:
     asyncio.run(sanity_check())
 
 
+def test_download_single_id(local_tj: aioresponses, results_sink: Path) -> None:
+    """Tests if download functions is able to fetch data from a single process."""
+    ignore_unused(local_tj)
+
+    request_id = to_cnj_number(CNJ_IDS["1"])
+
+    download_from_json(
+        ids=[request_id],
+        sink=results_sink,
+        cache_path=CACHE_PATH,
+    )
+
+    data = retrieve_data(results_sink)
+    print(f"{data=}")
+
+    has_same_entries(data, [MOCKED_TJRJ_BACKEND_DB["1"]])
+
+
 def test_download_all_ids(local_tj: aioresponses, results_sink: Path) -> None:
     """Tests if download functions is able to fetch all data."""
     ignore_unused(local_tj)
