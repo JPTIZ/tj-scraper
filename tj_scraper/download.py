@@ -41,7 +41,10 @@ DownloadFunction = Callable[[list[CNJProcessNumber], Path, Path, FilterFunction]
 T = TypeVar("T")
 
 
-def chunks(iterable: Iterable[T], n: int) -> Iterable[list[T]]:
+def chunks(
+    iterable: Iterable[T], n: int  # pylint: disable=invalid-name
+) -> Iterable[list[T]]:
+    """Iters in batches of a maximum of `n` elements."""
     iterator = iter(iterable)
 
     while True:
@@ -94,6 +97,8 @@ def write_cached_to_sink(
 
 
 class FetchFailReason(Enum):
+    """Reasons for a fetch operation to fail."""
+
     CAPTCHA = auto()
     FILTERED = auto()
     INVALID = auto()
@@ -106,8 +111,43 @@ TJResponse = list[str] | ProcessJSON
 
 
 class TJRequestParams(TypedDict):
+    """URL parameters for a request to TJ-RJ page."""
+
     tipoProcesso: str
     codigoProcesso: str
+
+
+def classify(
+    response: TJResponse,
+    cnj_number: CNJProcessNumber,
+    tj: TJ,  # pylint: disable=invalid-name
+) -> FetchResult:
+    """
+    Classifies the result of a fetch operation as an expected error type or a
+    process' data in JSON format.
+    """
+    match response:
+        case ["O processo informado não foi encontrado."]:
+            return FetchFailReason.NOT_FOUND
+        case ["Número do processo inválido."]:
+            return FetchFailReason.INVALID
+        case {
+            "status": 412,
+            "mensagem": "Erro de validação do Recaptcha. Tente novamente.",
+        }:
+            return FetchFailReason.CAPTCHA
+        case ([success] | success) if isinstance(
+            success, dict  # pylint: disable=used-before-assignment
+        ):
+            print(
+                f"Fetched process {cnj_number}:"
+                f" {success.get('txtAssunto', 'Sem Assunto')}"
+            )
+            return success
+    raise UnknownTJResponse(
+        f"TJ-{tj.name.upper()} endpoint responded with unknown message format:"
+        f" {response}"
+    )
 
 
 # pylint: disable=invalid-name
@@ -125,28 +165,6 @@ async def fetch_process(
     # momentos variados: basta salvar o último "batch" (conjunto de NNNNNNN's,
     # DD's e OOOO's).
 
-    def classify(response: TJResponse) -> FetchResult:
-        match response:
-            case ["O processo informado não foi encontrado."]:
-                return FetchFailReason.NOT_FOUND
-            case ["Número do processo inválido."]:
-                return FetchFailReason.INVALID
-            case {
-                "status": 412,
-                "mensagem": "Erro de validação do Recaptcha. Tente novamente.",
-            }:
-                return FetchFailReason.CAPTCHA
-            case ([success] | success) if isinstance(success, dict):
-                print(
-                    f"Fetched process {cnj_number}:"
-                    f" {success.get('txtAssunto', 'Sem Assunto')}"
-                )
-                return success
-        raise UnknownTJResponse(
-            f"TJ-{tj.name.upper()} endpoint responded with unknown message format:"
-            f" {response}"
-        )
-
     cnj_number_str = make_cnj_code(cnj_number)
 
     request_args = TJRequestParams(tipoProcesso="1", codigoProcesso=cnj_number_str)
@@ -161,7 +179,7 @@ async def fetch_process(
         ) as response:
             raw_response = json.loads(await response.text())
 
-        fetch_result = classify(raw_response)
+        fetch_result = classify(raw_response, cnj_number, tj)
 
         print(f"{request_args=} = {fetch_result}")
 
@@ -169,8 +187,8 @@ async def fetch_process(
             return fetch_result
 
         request_args = TJRequestParams(
-            tipoProcesso=str(fetch_result["tipoProcesso"]),
-            codigoProcesso=str(fetch_result["numProcesso"]),
+            tipoProcesso=str(fetch_result.get("tipoProcesso")),
+            codigoProcesso=str(fetch_result.get("numProcesso")),
         )
     else:
         request_args = TJRequestParams(tipoProcesso="1", codigoProcesso=cnj_number_str)
@@ -183,7 +201,7 @@ async def fetch_process(
     ) as response:
         raw_response = json.loads(await response.text())
 
-    return classify(raw_response)
+    return classify(raw_response, cnj_number, tj)
 
 
 def classify_and_cache(
@@ -192,6 +210,10 @@ def classify_and_cache(
     cache_path: Path,
     filter_function: FilterFunction,
 ) -> FetchResult:
+    """
+    Classifies the result of a fetch operation as an expected error type or a
+    process' data in JSON format and then updates cache accordinly.
+    """
     cnj_id_str = make_cnj_code(cnj_number)
 
     match fetch_result:
