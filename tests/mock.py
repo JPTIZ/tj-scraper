@@ -5,14 +5,13 @@ from typing import Any, Generator, Mapping
 import pytest
 from aioresponses import CallbackResult, aioresponses
 
-from tj_scraper.process import TJ_INFO
+from tj_scraper.process import TJ_INFO, ProcessJSON
 
 from .helpers import reverse_lookup
 
 CACHE_PATH = Path("cache_tests.db")
 
-Object = Mapping[str, str]
-MOCKED_TJRJ_BACKEND_DB: Mapping[str, Mapping[str, str | list[Object]]] = {
+MOCKED_TJRJ_BACKEND_DB: Mapping[str, ProcessJSON] = {
     "1": {
         "cidade": "Rio de Janeiro",
         "codCnj": "0000001-03.2021.8.19.0001",
@@ -78,15 +77,25 @@ def local_tj() -> Generator[aioresponses, None, None]:
     ) -> CallbackResult:
         _ = kwargs
 
+        print(f"{json=}")
         json = json if json is not None else {}
-        cnj_id = json["codCnj"]
+        print(f"OK {json=}")
+        cnj_id = json["codigoProcesso"]
         db_id = reverse_lookup(CNJ_IDS, cnj_id) if cnj_id is not None else None
+        print(f"{db_id=}")
         if db_id is not None:
             process = MOCKED_TJRJ_BACKEND_DB[db_id]
             # print(f"MOCKED_TJRJ_BACKEND_DB has no key {db_id}")
             payload: Payload = {
-                "tipoProcesso": "1",
-                **select_fields(process, ["codCnj", "codProc"]),
+                "tipoProcesso": 1,
+                "isProcessoVirtual": True,
+                "numProcesso": process["codProc"],
+                "codigoCnj": process["codCnj"],
+                # "nomeComarca": TODO
+                "descricaoServentia": "Dummy",  # TODO
+                "classe": "Procedimento Comum",
+                "assunto": process.get("txtAssunto", ""),
+                "ultimoMovimento": "Dummy",  # TODO
             }
         else:
             # print(f"CNJ_IDS has no key {cnj_id}")
@@ -99,6 +108,7 @@ def local_tj() -> Generator[aioresponses, None, None]:
     ) -> CallbackResult:
         _ = kwargs
 
+        print(f"{json=}")
         json = json if json is not None else {}
         process_id = reverse_lookup(REAL_IDS, json["codigoProcesso"])
         payload = (
