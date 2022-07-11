@@ -25,11 +25,11 @@ def make_number_list(numbers: Iterable[str]) -> list[CNJProcessNumber]:
 
 
 def make_filtered(
-    not_cached: set[str], cached: set[str], invalid: set[str]
+    not_cached: set[int], cached: set[str], invalid: set[str]
 ) -> Filtered:
     """Helper to create a Filtered object from sets of strings."""
     return Filtered(
-        not_cached=make_number_set(not_cached),
+        not_cached=not_cached,
         cached=make_number_set(cached),
         invalid=make_number_set(invalid),
     )
@@ -40,7 +40,7 @@ def test_filter_cached_ids_with_cached(cache_db: Path) -> None:
     from tj_scraper.cache import filter_cached, save_to_cache
 
     cached = {CNJ_IDS["2"]}
-    not_cached = set(CNJ_IDS.values()) - cached
+    not_cached = {1, 3, 4}
 
     for cached_id in cached:
         cnj_number = reverse_lookup(CNJ_IDS, cached_id)
@@ -49,8 +49,8 @@ def test_filter_cached_ids_with_cached(cache_db: Path) -> None:
 
         save_to_cache(MOCKED_TJRJ_BACKEND_DB[cnj_number], cache_db)
 
-    assert filter_cached(make_number_list(CNJ_IDS.values()), cache_db) == make_filtered(
-        not_cached, cached, set()
+    assert filter_cached([1, 2, 3, 4], cache_db) == make_filtered(
+        not_cached=not_cached, cached=cached, invalid=set()
     )
 
 
@@ -60,7 +60,7 @@ def test_filter_cached_ids_with_cached_and_invalid(cache_db: Path) -> None:
 
     cached = {CNJ_IDS["2"]}
     invalid = {CNJ_IDS["4"]}
-    not_cached = set(CNJ_IDS.values()) - (cached | invalid)
+    not_cached = {1, 3}
 
     for cached_id in cached:
         real_id = reverse_lookup(CNJ_IDS, cached_id)
@@ -78,7 +78,7 @@ def test_filter_cached_ids_with_cached_and_invalid(cache_db: Path) -> None:
             MOCKED_TJRJ_BACKEND_DB[real_id], cache_db, state=CacheState.INVALID
         )
 
-    assert filter_cached(make_number_list(CNJ_IDS.values()), cache_db) == make_filtered(
+    assert filter_cached([1, 2, 3, 4], cache_db) == make_filtered(
         not_cached=not_cached,
         cached=cached,
         invalid=invalid,
