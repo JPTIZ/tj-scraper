@@ -17,20 +17,15 @@ from tj_scraper.download import (
     TJResponse,
     chunks,
     classify,
-    classify_and_cache,
-    write_cached_to_sink,
     write_to_sink,
 )
 from tj_scraper.process import (
     TJ,
     TJ_INFO,
     CNJProcessNumber,
-    IdRange,
     TJInfo,
     get_process_id,
-    iter_in_range,
-    make_cnj_code,
-    next_number,
+    make_cnj_number_str,
     to_cnj_number,
 )
 
@@ -58,7 +53,7 @@ def fetch_process(
     # momentos variados: basta salvar o último "batch" (conjunto de NNNNNNN's,
     # DD's e OOOO's).
 
-    cnj_number_str = make_cnj_code(cnj_number)
+    cnj_number_str = make_cnj_number_str(cnj_number)
 
     request_args = TJRequestParams(tipoProcesso="1", codigoProcesso=cnj_number_str)
 
@@ -108,42 +103,10 @@ def fetch_and_eval(
     Attempts to fetch a process number by trying many combinations of
     verification digits and source units.
     """
-    tj_by_code = {tj.code: name for name, tj in tj_info.tjs.items()}
-
-    tj = tj_info.tjs[tj_by_code[cnj_number.tr_code]]
-
-    end = next_number(cnj_number)
-    if end is None:
-        end = CNJProcessNumber(
-            number=cnj_number.number,
-            digits=99,
-            year=cnj_number.year,
-            tr_code=cnj_number.tr_code,
-            source_unit=tj.source_units[-1].code,
-        )
-    test_range = IdRange(cnj_number, end)
-
-    fetch_result = None
-
-    for i, guess in enumerate(iter_in_range(test_range, tj=tj)):
-        fetch_result = fetch_process(
-            session,
-            guess,
-            tj=tj,
-        )
-        if not isinstance(fetch_result, FetchFailReason):
-            break
-
-        if i > 100:
-            break
-
-    assert fetch_result is not None
-
-    fetch_result = classify_and_cache(
-        fetch_result, cnj_number, cache_path, filter_function
+    _ = session, cnj_number, tj_info, cache_path, filter_function
+    raise NotImplementedError(
+        "TODO: call tj_scraper.download.try_combinations as it was sync."
     )
-
-    return fetch_result
 
 
 def fetch_all_processes(
@@ -202,32 +165,9 @@ def download_from_json(
     Downloads data from urls that return JSON values. Previously cached results
     are used by default if `force_fetch` is not set to `True`.
     """
-    print(f"download_from_json({ids=})")
-
-    if not force_fetch:
-        ids = write_cached_to_sink(
-            ids=ids,
-            sink=sink,
-            cache_path=cache_path,
-            filter_function=filter_function,
-        )
-
-    from time import time as current_time
-
-    start = current_time()
-    result = fetch_all_processes(ids, tj_info, cache_path, filter_function, sink)
-    end = current_time()
-
-    total_items: int = result
-    ellapsed = end - start
-
-    print(
-        f"""
-        Finished.
-            Ellapsed time:      {ellapsed:.2f}s
-            Request count:      {total_items}
-            Time/Request (avg): {ellapsed / max([total_items, 1]):.2f}s
-        """
+    _ = ids, sink, cache_path, filter_function, tj_info, force_fetch
+    raise NotImplementedError(
+        "TODO: call tj_scraper.download.discover_from_json_api as it was sync."
     )
 
 
@@ -336,7 +276,7 @@ def view_profile(path: Path) -> None:
     stats.print_stats()
 
 
-def main():
+def main() -> None:
     """Statistics generation."""
     ids = [
         to_cnj_number(number)

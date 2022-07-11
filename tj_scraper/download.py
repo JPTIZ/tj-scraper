@@ -2,6 +2,7 @@
 import asyncio
 import json
 from collections.abc import Collection
+from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 from typing import Callable, Iterable, Sequence, TypedDict, TypeVar
@@ -20,21 +21,18 @@ from .errors import UnknownTJResponse
 from .process import (
     REAL_ID_FIELD,
     TJ,
-    TJ_INFO,
+    CNJNumberCombinations,
     CNJProcessNumber,
-    IdRange,
+    JudicialSegment,
     ProcessJSON,
-    TJInfo,
-    all_from,
     get_process_id,
     has_words_in_subject,
-    iter_in_range,
-    make_cnj_code,
+    make_cnj_number_str,
 )
 from .timing import report_time
 
 FilterFunction = Callable[[ProcessJSON], bool]
-DownloadFunction = Callable[[list[CNJProcessNumber], Path, Path, FilterFunction], None]
+DownloadFunction = Callable[[CNJNumberCombinations, Path, Path, FilterFunction], None]
 
 
 T = TypeVar("T")
@@ -70,16 +68,18 @@ def write_to_sink(items: Sequence[ProcessJSON], sink: Path, reason: str) -> None
 
 
 def write_cached_to_sink(
-    ids: list[CNJProcessNumber],
+    combinations: CNJNumberCombinations,
     sink: Path,
     cache_path: Path,
     filter_function: FilterFunction,
-) -> list[CNJProcessNumber]:
+) -> list[int]:
     """
     Write only items with given IDs that are cached into the sink and returns
     which are not cached.
     """
-    filtered = report_time(filter_cached, ids, cache_path=cache_path).value
+    sequence = range(combinations.sequence_start, combinations.sequence_end + 1)
+    filtered = report_time(filter_cached, sequence, cache_path=cache_path).value
+    print(f"{filtered=}")
 
     def cache_filter(item: DBProcess) -> bool:
         return filter_function(item.json)
@@ -139,7 +139,7 @@ def classify(
             success, dict  # pylint: disable=used-before-assignment
         ):
             print(
-                f"Fetched process {cnj_number}:"
+                f"Fetched process {make_cnj_number_str(cnj_number)}:"
                 f" {success.get('txtAssunto', 'Sem Assunto')}"
             )
             return success
@@ -164,7 +164,7 @@ async def fetch_process(
     # momentos variados: basta salvar o último "batch" (conjunto de NNNNNNN's,
     # DD's e OOOO's).
 
-    cnj_number_str = make_cnj_code(cnj_number)
+    cnj_number_str = make_cnj_number_str(cnj_number)
 
     request_args = TJRequestParams(tipoProcesso="1", codigoProcesso=cnj_number_str)
 
@@ -179,8 +179,6 @@ async def fetch_process(
             raw_response = json.loads(await response.text())
 
         fetch_result = classify(raw_response, cnj_number, tj)
-
-        print(f"{request_args=} = {fetch_result}")
 
         if isinstance(fetch_result, FetchFailReason):
             return fetch_result
@@ -203,6 +201,16 @@ async def fetch_process(
     return classify(raw_response, cnj_number, tj)
 
 
+@dataclass(frozen=True)
+class CNJNumberCombination:
+    """A combination of values for a specific NNNNNNN value."""
+
+    sequential_number: int
+    year: int
+    segment: JudicialSegment
+    tj: TJ
+
+
 def classify_and_cache(
     fetch_result: FetchResult,
     cnj_number: CNJProcessNumber,
@@ -213,132 +221,141 @@ def classify_and_cache(
     Classifies the result of a fetch operation as an expected error type or a
     process' data in JSON format and then updates cache accordinly.
     """
-    cnj_id_str = make_cnj_code(cnj_number)
+    cnj_number_str = make_cnj_number_str(cnj_number)
 
     match fetch_result:
         case FetchFailReason.INVALID:
-            print(f"{cnj_number}: Invalid -- Cached now")
+            print(f"{cnj_number_str}: Invalid -- Cached now")
             save_to_cache(
-                {REAL_ID_FIELD: cnj_id_str},
+                {REAL_ID_FIELD: cnj_number_str},
                 cache_path,
                 state=CacheState.INVALID,
             )
         case FetchFailReason.NOT_FOUND:
-            print(f"{cnj_number}: Not found -- Cached now")
+            print(f"{cnj_number_str}: Not found -- Cached now")
             save_to_cache(
-                {REAL_ID_FIELD: cnj_id_str},
+                {REAL_ID_FIELD: cnj_number_str},
                 cache_path,
                 state=CacheState.INVALID,
             )
         case FetchFailReason.CAPTCHA:
-            print(f"{cnj_number}: Unfetched, failed on recaptcha.")
+            print(f"{cnj_number_str}: Unfetched, failed on recaptcha.")
         case FetchFailReason.FILTERED:
-            pass
+            raise NotImplementedError(
+                "Filtered without running filter function should not be possible."
+            )
         case process:
             save_to_cache(process, cache_path, state=CacheState.CACHED)
 
             if not filter_function(process):
                 subject = process.get("txtAssunto", "Sem Assunto")
                 print(
-                    f"{cnj_number}: Filtered  -- ({subject}) -- Cached now ({process=})"
+                    f"{cnj_number_str}: Filtered"
+                    f" -- ({subject}) -- Cached now ({process=})"
                 )
                 return FetchFailReason.FILTERED
 
     return fetch_result
 
 
-def download_from_json(
-    ids: list[CNJProcessNumber],
+def discover_with_json_api(
+    combinations: CNJNumberCombinations,
     sink: Path,
     cache_path: Path,
     filter_function: FilterFunction = lambda _: True,
     # pylint: disable=dangerous-default-value
-    tj_info: TJInfo = TJ_INFO,
     force_fetch: bool = False,
 ) -> None:
     """
     Downloads data from urls that return JSON values. Previously cached results
     are used by default if `force_fetch` is not set to `True`.
     """
-    print(f"download_from_json({ids=})")
+    from pprint import pformat
 
+    print(f"discover_with_json_api({pformat(combinations, depth=2)})")
+
+    not_cached_numbers = (
+        list(range(combinations.sequence_start, combinations.sequence_end + 1))
+        if force_fetch
+        else []
+    )
     if not force_fetch:
-        ids = write_cached_to_sink(
-            ids=ids,
+        not_cached_numbers = write_cached_to_sink(
+            combinations=combinations,
             sink=sink,
             cache_path=cache_path,
             filter_function=filter_function,
         )
 
-    tj_by_code = {tj.code: name for name, tj in tj_info.tjs.items()}
-
-    async def fetch_and_eval(
+    async def try_combinations(
         session: aiohttp.ClientSession,
         semaphore: asyncio.Semaphore,
-        cnj_number: CNJProcessNumber,
+        combination: CNJNumberCombination,
     ) -> FetchResult:
-        tj = tj_info.tjs[tj_by_code[cnj_number.tr_code]]
+        """
+        Attempts to find which combination of values for CNJ number's fields
+        result in a real process.
+        """
+        from contextlib import asynccontextmanager
+        from typing import AsyncGenerator
 
-        end = CNJProcessNumber(
-            number=cnj_number.number,
-            digits=99,
-            year=cnj_number.year,
-            tr_code=cnj_number.tr_code,
-            source_unit=max(tj.source_units, key=lambda unit: unit.code).code,
+        @asynccontextmanager
+        async def ensure_released(
+            semaphore: asyncio.Semaphore,
+        ) -> AsyncGenerator[None, None]:
+            await semaphore.acquire()
+            yield
+            semaphore.release()
+
+        test_range = CNJNumberCombinations(
+            combination.sequential_number,
+            combination.sequential_number,
+            tj=combination.tj,
+            year=combination.year,
+            segment=combination.segment,
         )
-        if end is None:
-            end = CNJProcessNumber(
-                number=cnj_number.number,
-                digits=99,
-                year=cnj_number.year,
-                tr_code=cnj_number.tr_code,
-                source_unit=tj.source_units[-1].code,
-            )
-        test_range = IdRange(cnj_number, end)
 
-        await semaphore.acquire()
+        async with ensure_released(semaphore):
+            fetch_result = None
 
-        fetch_result = None
+            for guess in test_range:
+                fetch_result = await fetch_process(
+                    session,
+                    guess,
+                    tj=combination.tj,
+                )
 
-        # guess_requests = (
-        #     fetch_process(session, guess, tj=tj)
-        #     for guess in iter_in_range(test_range, tj=tj)
-        # )
-        # print(guess_requests)
-        # guesses = await asyncio.gather(*guess_requests)
-        # for guess in guesses:
-        #     if guess.result_type == FetchResultType.SUCCESS:
-        #         fetch_result = guess
-        for guess in iter_in_range(test_range, tj=tj):
-            fetch_result = await fetch_process(
-                session,
-                guess,
-                tj=tj,
-            )
-            if not isinstance(fetch_result, FetchFailReason):
-                break
+                fetch_result = classify_and_cache(
+                    fetch_result, guess, cache_path, filter_function
+                )
+
+                if (
+                    not isinstance(fetch_result, FetchFailReason)
+                    or fetch_result == FetchFailReason.FILTERED
+                ):
+                    break
 
         assert fetch_result is not None
 
-        fetch_result = classify_and_cache(
-            fetch_result, cnj_number, cache_path, filter_function
-        )
-
-        semaphore.release()
-
         return fetch_result
 
-    async def fetch_all_processes(
-        numbers: list[CNJProcessNumber], step: int = 100
-    ) -> int:
+    async def discover_processes(sequential_numbers: list[int], step: int = 100) -> int:
         total = 0
         async with aiohttp.ClientSession(trust_env=True) as session:
             semaphore = asyncio.Semaphore(value=step)
             requests = (
-                fetch_and_eval(session, semaphore, number) for number in numbers
+                try_combinations(
+                    session,
+                    semaphore,
+                    CNJNumberCombination(
+                        number, combinations.year, combinations.segment, combinations.tj
+                    ),
+                )
+                for number in sequential_numbers
             )
+            print(requests)
             for i, batch in enumerate(chunks(requests, 1000), start=1):
-                print(f"\n--\n-- Wave: {i}")
+                print(f"\n--\n-- Batch: {i}")
                 results: Iterable[FetchResult] = await asyncio.gather(*batch)
                 processes = []
                 filtered = 0
@@ -367,7 +384,7 @@ def download_from_json(
     from time import time
 
     start = time()
-    result = asyncio.run(fetch_all_processes(ids))
+    result = asyncio.run(discover_processes(not_cached_numbers))
     end = time()
 
     total_items: int = result
@@ -391,7 +408,7 @@ def download_from_html(
     from .html import TJRJSpider, run_spider
     from .url import build_tjrj_process_url
 
-    start_urls = [build_tjrj_process_url(make_cnj_code(id_)) for id_ in ids]
+    start_urls = [build_tjrj_process_url(make_cnj_number_str(id_)) for id_ in ids]
     print(f"{start_urls=}")
 
     crawler_settings = {
@@ -409,38 +426,39 @@ def download_from_html(
 
 
 def download_all_with_ids(
-    ids: list[CNJProcessNumber],
+    combinations: CNJNumberCombinations,
     sink: Path,
     cache_path: Path,
     filter_function: FilterFunction = lambda _: True,
-    download_function: DownloadFunction = download_from_json,
+    download_function: DownloadFunction = discover_with_json_api,
 ) -> None:
     """
     Downloads relevant info from all valid process with ID in `ids` and saves
     it into `sink`. Expects `sink` to be in JSONLines format.
     """
-    print(f"download_all_with_ids({ids=})")
-    download_function(ids, sink, cache_path, filter_function)
+    from pprint import pformat
+
+    print(f"download_all_with_ids({pformat(combinations, depth=1)})")
+    download_function(combinations, sink, cache_path, filter_function)
 
 
 def download_all_from_range(
-    id_range: IdRange,
+    number_range: CNJNumberCombinations,
     sink: Path,
     cache_path: Path,
     filter_function: FilterFunction = lambda _: True,
-    download_function: DownloadFunction = download_from_json,
+    download_function: DownloadFunction = discover_with_json_api,
 ) -> None:
     """
     Downloads relevant info from all valid process whose ID is within
     `id_range` and saves it into `sink`. Expects `sink` to be in JSONLines
     format.
     """
-    ids = all_from(id_range, tj=TJ_INFO.tjs["rj"])
-    download_function(list(ids), sink, cache_path, filter_function)
+    download_function(number_range, sink, cache_path, filter_function)
 
 
 def processes_by_subject(
-    id_range: IdRange,
+    combinations: CNJNumberCombinations,
     words: Collection[str],
     download_function: DownloadFunction,
     output: Path,
@@ -456,20 +474,8 @@ def processes_by_subject(
     else:
         print("Empty 'words'. Word filtering will not be applied.")
 
-    # TODO: Utilizar os OOOO segundo o arquivo `sheet` que vai ser versionado.
-    #       Reduz 4 dígitos da busca.
-    # TODO: Dígitos verificadores vão ser chutados e, achando um válido, já se
-    #       avança o número do processo. Reduz X% de 2 dígitos.
-    # all_from_range = set(all_from(id_range, tj=TJ_INFO.tjs["rj"]))
-    ids_as_range = range(id_range.start.number, id_range.end.number + 1)
-
-    ids = [
-        CNJProcessNumber(**{**id_range.start._asdict(), "number": id_})
-        for id_ in ids_as_range
-    ]
-
     download_all_with_ids(
-        ids,
+        combinations,
         output,
         cache_path,
         filter_function=filter_function,

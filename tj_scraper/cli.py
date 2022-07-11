@@ -5,8 +5,8 @@ from typing import Optional
 
 from typer import Argument, Exit, Option, Typer
 
-from .download import download_from_html, download_from_json, processes_by_subject
-from .process import CNJProcessNumber, IdRange, id_or_range
+from .download import discover_with_json_api, download_from_html, processes_by_subject
+from .process import TJ_INFO, CNJNumberCombinations, CNJProcessNumber, number_or_range
 
 
 def make_app() -> Typer:
@@ -126,14 +126,23 @@ def make_app() -> Typer:
 
         download_function = {
             DownloadModes.HTML: download_from_html,
-            DownloadModes.JSON: download_from_json,
+            DownloadModes.JSON: discover_with_json_api,
         }[mode]
 
-        if isinstance(id_range_ := id_or_range(id_range), CNJProcessNumber):
-            id_range_ = IdRange(id_range_, id_range_)
+        tj_by_code = {tj.code: name for name, tj in TJ_INFO.tjs.items()}
+
+        if isinstance(number_range := number_or_range(id_range), CNJProcessNumber):
+            number = number_range
+            number_range = CNJNumberCombinations(
+                number.sequential_number,
+                number.sequential_number,
+                year=number.year,
+                segment=number.segment,
+                tj=TJ_INFO.tjs[tj_by_code[number.tr_code]],
+            )
 
         processes_by_subject(
-            id_range_,
+            number_range,
             subjects or [],
             download_function=download_function,  # type: ignore
             output=output,

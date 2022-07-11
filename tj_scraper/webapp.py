@@ -7,7 +7,7 @@ from flask.wrappers import Response as FlaskResponse
 from werkzeug.wrappers.response import Response as WerkzeugResponse
 
 from .cache import jsonl_reader, restore
-from .process import TJRJ, CNJProcessNumber, IdRange, all_from, to_cnj_number
+from .process import TJRJ, CNJNumberCombinations, CNJProcessNumber, to_cnj_number
 
 Response = Union[str, tuple[str | FlaskResponse | WerkzeugResponse, int]]
 
@@ -31,7 +31,7 @@ Response = Union[str, tuple[str | FlaskResponse | WerkzeugResponse, int]]
 # sobrecarregar o servidor só para mostrar alguns processos.
 
 
-def make_intervals(known_ids: list[CNJProcessNumber]) -> list[IdRange]:
+def make_intervals(known_ids: list[CNJProcessNumber]) -> list[CNJNumberCombinations]:
     """
     Creates a list of (start, end) intervals of sequential IDs in `known_ids`.
     """
@@ -40,7 +40,13 @@ def make_intervals(known_ids: list[CNJProcessNumber]) -> list[IdRange]:
     interval_start, interval_end = start, start
     known_ids_set = set(known_ids)
     started_sequence = True
-    for id_ in all_from(IdRange(start, end), tj=TJRJ):
+    for id_ in CNJNumberCombinations(
+        start.sequential_number,
+        end.sequential_number,
+        tj=TJRJ,
+        segment=start.segment,
+        year=start.year,
+    ):
         if id_ in known_ids_set:
             if not started_sequence:
                 interval_start = id_
@@ -48,11 +54,27 @@ def make_intervals(known_ids: list[CNJProcessNumber]) -> list[IdRange]:
             started_sequence = True
         else:
             if started_sequence:
-                intervals.append(IdRange(interval_start, interval_end))
+                intervals.append(
+                    CNJNumberCombinations(
+                        interval_start.sequential_number,
+                        interval_end.sequential_number,
+                        tj=TJRJ,
+                        segment=start.segment,
+                        year=start.year,
+                    )
+                )
             started_sequence = False
 
     if started_sequence:
-        intervals.append(IdRange(interval_start, interval_end))
+        intervals.append(
+            CNJNumberCombinations(
+                interval_start.sequential_number,
+                interval_end.sequential_number,
+                tj=TJRJ,
+                segment=start.segment,
+                year=start.year,
+            )
+        )
 
     print(f"{intervals=}")
     return intervals
@@ -99,8 +121,8 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
     def _search() -> Response:
         # pylint: disable=too-many-locals
         from tj_scraper.download import (
+            discover_with_json_api,
             download_all_from_range,
-            download_from_json,
             processes_by_subject,
         )
 
@@ -113,7 +135,15 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
                 400,
             )
 
-        id_range = IdRange(to_cnj_number(start_arg), to_cnj_number(end_arg))
+        start = to_cnj_number(start_arg)
+        end = to_cnj_number(end_arg)
+        id_range = CNJNumberCombinations(
+            start.sequential_number,
+            end.sequential_number,
+            tj=TJRJ,
+            segment=start.segment,
+            year=start.year,
+        )
         subject = ""
 
         from tempfile import NamedTemporaryFile
@@ -127,7 +157,7 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
                     processes_by_subject(
                         id_range,
                         words=subject.split(),
-                        download_function=download_from_json,
+                        download_function=discover_with_json_api,
                         output=sink_file,
                         cache_path=cache_path,
                     )
@@ -149,7 +179,10 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
                 return jsonify(data), 200
             case "xlsx":
                 suffix = "_".join(subject.split())
-                filename = f"Processos-TJ-{id_range.start}-{id_range.end}-{suffix}.xlsx"
+                filename = (
+                    "Processos-TJ"
+                    f"-{id_range.sequence_start}-{id_range.sequence_end}-{suffix}.xlsx"
+                )
                 with NamedTemporaryFile() as xlsx_file:
                     from tj_scraper.export import export_to_xlsx
 

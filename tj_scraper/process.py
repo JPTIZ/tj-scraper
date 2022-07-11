@@ -1,9 +1,24 @@
 """Related to a TJ's juridical process."""
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
-from typing import Callable, Generator, Mapping, NamedTuple, Optional, Union
+from typing import Callable, Iterator, Mapping, NamedTuple, Optional, Union
 
 from .errors import InvalidProcessNumber
+
+
+class JudicialSegment(Enum):
+    """Judicial segment values according to CNJ number specification."""
+
+    STF = 1  # Supremo Tribunal Federal
+    CNJ = 2  # Conselho Nacional de Justiça
+    STJ = 3  # Supremo Tribunal de Justiça
+    JF = 4  # Justiça Federal
+    JT = 5  # Justiça do Trabalho
+    JE = 6  # Justiça Eleitoral
+    JMU = 7  # Justiça Militar da União
+    JEDFT = 8  # Justiça dos Estados e do Distrito Federal e Territórios
+    JME = 9  # Justiça Militar dos Estados
 
 
 @dataclass
@@ -31,15 +46,32 @@ class TJInfo:
 
     tjs: Mapping[str, TJ]
 
+    def tj_by_code(self, code: int) -> TJ | None:
+        """Searches which TJ has code `code`."""
+        tjs = [tj for tj in self.tjs.values() if tj.code == code]
+
+        return tjs[0] if tjs else None
+
 
 class CNJProcessNumber(NamedTuple):
     """A single process number in the format used in CNJ (Unified)."""
 
-    number: int
-    digits: int
+    sequential_number: int
     year: int
+    segment: JudicialSegment
     tr_code: int
     source_unit: int  # 4 digits
+
+    @property
+    def digits(self) -> int:
+        """Calculates verification digits."""
+        return calculate_digits(
+            self.sequential_number,
+            self.year,
+            self.segment,
+            self.tr_code,
+            self.source_unit,
+        )
 
 
 class TJRJProcessNumber(NamedTuple):
@@ -51,11 +83,33 @@ class TJRJProcessNumber(NamedTuple):
     digit: int
 
 
-class IdRange(NamedTuple):
-    """A range of CNJ numbers."""
+@dataclass(frozen=True)
+class CNJNumberCombinations:
+    """
+    Parameters to find possible CNJ numbers in a range of values for NNNNNNN
+    part.
+    """
 
-    start: CNJProcessNumber
-    end: CNJProcessNumber
+    sequence_start: int
+    sequence_end: int
+    tj: TJ
+    year: int
+    segment: JudicialSegment
+
+    def __iter__(self) -> Iterator[CNJProcessNumber]:
+        """Iters through a process ID range."""
+        number: Optional[CNJProcessNumber] = CNJProcessNumber(
+            sequential_number=self.sequence_start,
+            year=self.year,
+            segment=self.segment,
+            tr_code=self.tj.code,
+            source_unit=self.tj.source_units[0].code,
+        )
+
+        while number is not None and number.sequential_number <= self.sequence_end:
+            yield number
+
+            number = advance(number, tj=self.tj)
 
 
 Value = str
@@ -83,7 +137,7 @@ def get_process_id(process: ProcessJSON) -> str:
     return str(process[REAL_ID_FIELD])
 
 
-def id_or_range(process_id: str) -> IdRange | CNJProcessNumber:
+def number_or_range(process_id: str) -> CNJNumberCombinations | CNJProcessNumber:
     """Evaluates a "<start>..<end>" or a "<process id>" string."""
     start, *end = process_id.split("..")
 
@@ -92,83 +146,83 @@ def id_or_range(process_id: str) -> IdRange | CNJProcessNumber:
             f'Invalid range format. Expected just one "..", got "{process_id}".'
         )
 
+    start_number = to_cnj_number(start)
+
+    tjs = [tj for tj in TJ_INFO.tjs.values() if tj.code == start_number.tr_code]
+
+    if not tjs:
+        raise ValueError(f"Unknown TR code '{start_number.tr_code}'.")
+
+    tj = tjs[0]
+
     if end:
-        return IdRange(to_cnj_number(start), to_cnj_number(end[0]))
+        return CNJNumberCombinations(
+            start_number.sequential_number,
+            to_cnj_number(end[0]).sequential_number,
+            tj,
+            start_number.year,
+            start_number.segment,
+        )
     return to_cnj_number(start)
 
 
 def to_cnj_number(process_id: str) -> CNJProcessNumber:
-    """Evaluates a single string into a CNJ process number."""
+    """
+    Evaluates a single string into a CNJ process number. The digits part is
+    unused and calculated automatically.
+    """
     import re
 
-    matched = re.fullmatch(r"(\d{7})-(\d{2}).(\d{4}).8.(\d{2})\.(\d{4})", process_id)
+    matched = re.fullmatch(r"(\d{7})-(\d{2}).(\d{4}).(\d).(\d{2})\.(\d{4})", process_id)
 
     if matched is None:
         raise InvalidProcessNumber(
             f'A string "{process_id}" não corresponde a um número válido do CNJ.'
         )
-    return CNJProcessNumber(*map(int, matched.groups()))
+
+    (number, _, year, segment, tr_code, source_unit) = map(int, matched.groups())
+
+    return CNJProcessNumber(
+        number, year, JudicialSegment(segment), tr_code, source_unit
+    )
 
 
-def cap_with_carry(number: int, limit: int) -> tuple[int, int]:
-    """
-    Bounds `number` to the limit specified and returns it and a carry value if
-    number exceeds the limit.
-    """
-    return number % limit, number // limit
-
-
-def next_in_range(range_: IdRange, tj: TJ) -> Optional[CNJProcessNumber]:
-    """
-    Returns the next valid process ID within specified range.
-
-    Example: 0169689-05.2021.8.19.0001 -> 0169689-05.2021.8.19.0002
-    """
-    start, end = range_.start, range_.end
-
-    if not any(x < y for x, y in zip(start, end)):
-        return None
-
-    return advance(start, tj=tj)
-
-
-def iter_in_range(range_: IdRange, tj: TJ) -> Generator[CNJProcessNumber, None, None]:
-    """Iters through a process ID range."""
-    new_start: Optional[CNJProcessNumber] = range_.start
-
-    while new_start is not None:
-        yield new_start
-
-        new_start = next_in_range(IdRange(new_start, range_.end), tj=tj)
-
-
-def all_from(
-    range_: IdRange | CNJProcessNumber, tj: TJ
-) -> Generator[CNJProcessNumber, None, None]:
-    """Yields all valid process IDs from range (or the provided ID if not a range)."""
-    if isinstance(range_, CNJProcessNumber):
-        yield range_
-        return
-
-    start, end = range_
-
-    assert start < end, "End should be higher than start."
-
-    yield start
-
-    while (start_ := next_in_range(IdRange(start, end), tj=tj)) is not None:
-        start = start_
-        yield start
-
-
-def make_cnj_code(number: CNJProcessNumber) -> str:
+def make_cnj_number_str(number: CNJProcessNumber) -> str:
     """Creates a string in expected CNJ number format."""
     return (
-        f"{number.number:07}"
+        f"{number.sequential_number:07}"
         f"-{number.digits:02}"
         f".{number.year:04}"
         f".8.{number.tr_code:02}"
         f".{number.source_unit:04}"
+    )
+
+
+def calculate_digits(
+    number: int, year: int, segment: JudicialSegment, tr_code: int, source_unit: int
+) -> int:
+    """Calculates verification digits for the given CNJ number fields."""
+    mixed = int(f"{number:07}{year:04}{segment.value}{tr_code:02}{source_unit:04}")
+    return 98 - (mixed * 100 % 97)
+
+
+def make_cnj_number(
+    sequential_number: int,
+    year: int,
+    segment: JudicialSegment,
+    tr_code: int,
+    source_unit: int,
+) -> CNJProcessNumber:
+    """
+    Returns a complete CNJ process number with its verification digits
+    calculated accordinly.
+    """
+    return CNJProcessNumber(
+        sequential_number=sequential_number,
+        year=year,
+        segment=segment,
+        tr_code=tr_code,
+        source_unit=source_unit,
     )
 
 
@@ -178,10 +232,10 @@ def next_source_unit(number: CNJProcessNumber, tj: TJ) -> Optional[CNJProcessNum
         number.source_unit
     )
     try:
-        return CNJProcessNumber(
-            number=number.number,
-            digits=number.digits,
+        return make_cnj_number(
+            sequential_number=number.sequential_number,
             year=number.year,
+            segment=number.segment,
             tr_code=number.tr_code,
             source_unit=tj.source_units[current_unit_index + 1].code,
         )
@@ -189,36 +243,23 @@ def next_source_unit(number: CNJProcessNumber, tj: TJ) -> Optional[CNJProcessNum
         return None
 
 
-def next_digit(number: CNJProcessNumber) -> Optional[CNJProcessNumber]:
-    """Gets the next process number by advancing the 'digits' part."""
-    new_digit = number.digits + 1
-
-    if new_digit >= 100:
-        return None
-
-    return CNJProcessNumber(
-        number=number.number,
-        digits=new_digit,
-        year=number.year,
-        tr_code=number.tr_code,
-        source_unit=number.source_unit,
-    )
-
-
 def next_number(number: CNJProcessNumber) -> Optional[CNJProcessNumber]:
     """Gets the next process number by advancing the 'number' part."""
-    new_number = number.number + 1
+    new_number = number.sequential_number + 1
 
     if new_number >= 1000000:
         return None
 
-    return CNJProcessNumber(
-        number=new_number,
-        digits=number.digits,
+    return make_cnj_number(
+        sequential_number=new_number,
         year=number.year,
+        segment=number.segment,
         tr_code=number.tr_code,
         source_unit=number.source_unit,
     )
+
+
+ResetFunction = Callable[[CNJProcessNumber], CNJProcessNumber]
 
 
 def advance(number: CNJProcessNumber, tj: TJ) -> Optional[CNJProcessNumber]:
@@ -227,13 +268,25 @@ def advance(number: CNJProcessNumber, tj: TJ) -> Optional[CNJProcessNumber]:
     existing) process number.
     """
 
-    def reset_for(field: str) -> Callable[[CNJProcessNumber], CNJProcessNumber]:
-        return lambda number: CNJProcessNumber(**{**number._asdict(), field: 0})
+    def reset_for(field: str) -> ResetFunction:
+        def zero_field(number: CNJProcessNumber) -> CNJProcessNumber:
+            number_as_dict = {
+                k: v for k, v in number._asdict().items() if k not in [field, "digits"]
+            }
+
+            number_as_dict[field] = 0
+
+            print(f"{make_cnj_number(**number_as_dict)=}")
+
+            return make_cnj_number(**number_as_dict)
+
+        return zero_field
 
     # Units can be ordered by [known] frequency, so testing digits for the most
     # frequent unit might cut much more work.
-    steps = [
-        (next_digit, reset_for("digits")),
+    steps: list[
+        tuple[Callable[[CNJProcessNumber], CNJProcessNumber | None], ResetFunction]
+    ] = [
         (lambda n: next_source_unit(n, tj), reset_for("source_unit")),
         (next_number, reset_for("number")),
     ]

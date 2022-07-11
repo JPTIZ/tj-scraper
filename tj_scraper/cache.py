@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional, Sequence
 
 import jsonlines
 
@@ -12,7 +12,7 @@ from .process import (
     CNJProcessNumber,
     ProcessJSON,
     get_process_id,
-    make_cnj_code,
+    make_cnj_number_str,
     to_cnj_number,
 )
 
@@ -184,7 +184,9 @@ def restore(
                 " where id not in (:exclude_ids) "
                 f"{extra}",
                 {
-                    "exclude_ids": ",".join(make_cnj_code(id_) for id_ in exclude_ids),
+                    "exclude_ids": ",".join(
+                        make_cnj_number_str(id_) for id_ in exclude_ids
+                    ),
                     "subject": ",".join(with_subject),
                 },
             ).fetchall()
@@ -241,43 +243,58 @@ def load_metadata(cache_path: Path) -> CacheMetadata:
 
 @dataclass
 class Filtered:
-    """Result of filtering which IDs are cached or not."""
+    """
+    Result of filtering which CNJ numbers are cached or not. See `filter_cached`.
+    """
 
-    not_cached: set[CNJProcessNumber]
+    not_cached: set[int]
     cached: set[CNJProcessNumber]
     invalid: set[CNJProcessNumber]
 
 
-def filter_cached(ids: list[CNJProcessNumber], cache_path: Path) -> Filtered:
+def filter_cached(sequential_numbers: Sequence[int], cache_path: Path) -> Filtered:
     """
-    Filters IDs that are already cached. Returns a tuple with uncached and
-    cached ids, respectively.
+    Classifies which processes are already cached based on its NNNNNNN field,
+    since it is unique per process. When no cached process has that NNNNNNN, it
+    is not possible to know its full number, so in this case only the NNNNNNN
+    is returned instead of a full number.
     """
-    ids = [*ids]
-    cached_ids = set()
+    from tj_scraper.process import JudicialSegment
+
+    sequential_numbers = list(sequential_numbers)
+    print(f"filter_cached({sequential_numbers=})")
     cache = load_metadata(cache_path)
 
-    cached_ids = {
-        cached_id
-        for raw_cached_id, state in cache.states.items()
-        if state == CacheState.CACHED
-        and (cached_id := to_cnj_number(raw_cached_id)) in ids
+    classified = Filtered(not_cached=set(), cached=set(), invalid=set())
+
+    cache_states = {
+        cnj_number.sequential_number: (cnj_number, state)
+        for raw_number, state in cache.states.items()
+        if (cnj_number := to_cnj_number(raw_number)).sequential_number
+        in sequential_numbers
     }
 
-    invalid_ids = {
-        cached_id
-        for raw_cached_id, state in cache.states.items()
-        if state == CacheState.INVALID
-        and (cached_id := to_cnj_number(raw_cached_id)) in ids
-    }
+    print(f"{cache_states=}")
 
-    filtered_ids = set(ids) - (cached_ids | invalid_ids)
+    for sequential_number in sequential_numbers:
+        cnj_and_state = cache_states.get(
+            sequential_number,
+            (
+                CNJProcessNumber(0, 0, JudicialSegment.JEDFT, tr_code=0, source_unit=0),
+                CacheState.NOT_CACHED,
+            ),
+        )
+        print(f"{sequential_number=}, {cnj_and_state}=")
 
-    return Filtered(
-        not_cached=filtered_ids,
-        cached=cached_ids,
-        invalid=invalid_ids,
-    )
+        match cnj_and_state:
+            case (cnj_number, CacheState.CACHED):
+                classified.cached |= {cnj_number}
+            case (cnj_number, CacheState.INVALID):
+                classified.invalid |= {cnj_number}
+            case (_, CacheState.NOT_CACHED):
+                classified.not_cached |= {sequential_number}
+
+    return classified
 
 
 def load_all(cache_path: Path) -> list[tuple[str, str, str, dict[str, Any]]]:

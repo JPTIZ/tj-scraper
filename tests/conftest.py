@@ -14,19 +14,20 @@ from tj_scraper.cache import load_all
 pytest.register_assert_rewrite("tests.helpers")
 
 # pylint: disable=wrong-import-position
+# pylint: disable=redefined-outer-name
 from .helpers import ignore_unused
-from .mock import CACHE_PATH, local_tj
+from .mock import local_tj
 
 ignore_unused(local_tj)
 
 
 @pytest.fixture(autouse=True)
-def cache_db() -> Generator[Path, None, None]:
+def cache_db(tmp_path: Path) -> Generator[Path, None, None]:
     """
     Creates (once for each test function) a temporary ".db" cache file and
     deletes after test ends.
     """
-    path = Path("cache_tests.db")
+    path = tmp_path / "cache_tests.db"
     yield path
     path.unlink(missing_ok=True)
 
@@ -53,6 +54,7 @@ def pytest_runtest_makereport(
 
 @pytest.fixture(autouse=True)
 def show_cache_state(
+    cache_db: Path,
     request: _pytest.fixtures.FixtureRequest,
 ) -> Generator[None, None, None]:
     """Shows current cache state when a test fails."""
@@ -61,11 +63,11 @@ def show_cache_state(
     yield
 
     if request.node.rep_call.failed:
-        print("Download test failed. Cache state:")
+        print("Test failed. Cache state:")
         try:
             state = {
                 i: {"ID": i, "CacheState": s, "Assunto": a, "JSON": v}
-                for (i, s, a, v) in load_all(cache_path=CACHE_PATH)
+                for (i, s, a, v) in load_all(cache_path=cache_db)
             }
             pprint(state, depth=3)
         except Exception as error:  # pylint: disable=broad-except

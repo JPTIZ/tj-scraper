@@ -6,9 +6,9 @@ import pytest
 
 
 @pytest.fixture()
-def results_sink() -> Generator[Path, None, None]:
+def results_sink(tmp_path: Path) -> Generator[Path, None, None]:
     """A sink file for tests' collected download items."""
-    sink = Path("tests") / "test_results.jsonl"
+    sink = tmp_path / "test_results.jsonl"
     yield sink
     sink.unlink(missing_ok=True)
 
