@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - given-names: "Joao Paulo"
+    family-names: "Taylor Ienczak Zanette"
+    email: jpaulotiz@gmail.com
+    orcid: "https://orcid.org/0000-0001-6842-0237"
+type: software
+title: "JPTIZ/tj-scraper: v0.1.1 - Licensed"
+version: 0.1.1
+doi: 10.5281/zenodo.6899201
+date-released: 2022-07-25
+url: "https://github.com/jptiz/tj-scraper"
