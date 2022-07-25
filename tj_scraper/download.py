@@ -5,7 +5,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from typing import Callable, Iterable, Sequence, TypedDict, TypeVar
+from typing import Callable, Coroutine, Iterable, Sequence, TypedDict, TypeVar
 
 import aiohttp
 import jsonlines
@@ -102,11 +102,11 @@ class FetchFailReason(Enum):
     FILTERED = auto()
     INVALID = auto()
     NOT_FOUND = auto()
+    UNSUPPORTED = auto()
 
 
 FetchResult = FetchFailReason | ProcessJSON
-
-TJResponse = list[str] | ProcessJSON
+TJResponse = list[str | ProcessJSON] | ProcessJSON
 
 
 class TJRequestParams(TypedDict):
@@ -125,6 +125,8 @@ def classify(
     Classifies the result of a fetch operation as an expected error type or a
     process' data in JSON format.
     """
+    item: ProcessJSON
+    items: list[str | ProcessJSON]
     match response:
         case ["O processo informado não foi encontrado."]:
             return FetchFailReason.NOT_FOUND
@@ -135,18 +137,40 @@ def classify(
             "mensagem": "Erro de validação do Recaptcha. Tente novamente.",
         }:
             return FetchFailReason.CAPTCHA
-        case ([success] | success) if isinstance(
-            success, dict  # pylint: disable=used-before-assignment
-        ):
+        case {"urlExterna": _} | {"tipoProcesso": 2}:
+            return FetchFailReason.UNSUPPORTED
+        case list() as items:
+            for process in items:
+                assert not isinstance(process, str)
+
+                print(
+                    f"Fetched process {make_cnj_number_str(cnj_number)}:"
+                    f" {process.get('txtAssunto', 'Sem Assunto')}"
+                )
+                return process
+        case dict() as item if item.get("tipoProcesso", 1) == 1:
             print(
                 f"Fetched process {make_cnj_number_str(cnj_number)}:"
-                f" {success.get('txtAssunto', 'Sem Assunto')}"
+                f" {item.get('txtAssunto', 'Sem Assunto')}"
             )
-            return success
+            return item
+
+    from pprint import pformat
+
     raise UnknownTJResponse(
-        f"TJ-{tj.name.upper()} endpoint responded with unknown message format:"
-        f" {response}"
+        f"TJ-{tj.name.upper()} endpoint responded with unknown message format ({type(response)=}) for input {cnj_number}:\n"
+        f" {pformat(response)}"
     )
+    # [{'assunto': 'Antecipação de Tutela / Tutela Específica / Processo e '
+    #             'Procedimento / DIREITO PROCESSUAL CIVIL E DO TRABALHO',
+    #  'classe': 'AGRAVO DE INSTRUMENTO - CÍVEL',
+    #  'codigoCnj': '0015714-63.2021.8.19.0000',
+    #  'descricaoServentia': 'DÉCIMA OITAVA CAMARA CIVEL',
+    #  'isProcessoVirtual': True,
+    #  'nomeComarca': 'Comarca da Capital',
+    #  'numProcesso': '2021.002.19959',
+    #  'tipoProcesso': 2,
+    #  'url': 'https://www3.tjrj.jus.br/ejud/ConsultaProcesso.aspx?N=2021.002.19959'}]
 
 
 # pylint: disable=invalid-name
@@ -240,11 +264,16 @@ def classify_and_cache(
             )
         case FetchFailReason.CAPTCHA:
             print(f"{cnj_number_str}: Unfetched, failed on recaptcha.")
+        case FetchFailReason.UNSUPPORTED:
+            print(
+                f"{cnj_number_str}: Unsupported 2nd instance process. Won't be cached."
+            )
         case FetchFailReason.FILTERED:
             raise NotImplementedError(
                 "Filtered without running filter function should not be possible."
             )
         case process:
+
             save_to_cache(process, cache_path, state=CacheState.CACHED)
 
             if not filter_function(process):
@@ -258,13 +287,128 @@ def classify_and_cache(
     return fetch_result
 
 
+async def try_combinations(
+    session: aiohttp.ClientSession,
+    semaphore: asyncio.Semaphore,
+    combination: CNJNumberCombination,
+    filter_function: FilterFunction,
+    cache_path: Path,
+) -> FetchResult:
+    """
+    Attempts to find which combination of values for CNJ number's fields
+    result in a real process.
+    """
+    from contextlib import asynccontextmanager
+    from typing import AsyncGenerator
+
+    @asynccontextmanager
+    async def ensure_released(
+        semaphore: asyncio.Semaphore,
+    ) -> AsyncGenerator[None, None]:
+        await semaphore.acquire()
+        yield
+        semaphore.release()
+
+    test_range = CNJNumberCombinations(
+        combination.sequential_number,
+        combination.sequential_number,
+        tj=combination.tj,
+        year=combination.year,
+        segment=combination.segment,
+    )
+
+    async with ensure_released(semaphore):
+        fetch_result = None
+
+        for guess in test_range:
+            fetch_result = await fetch_process(
+                session,
+                guess,
+                tj=combination.tj,
+            )
+
+            fetch_result = classify_and_cache(
+                fetch_result, guess, cache_path, filter_function
+            )
+
+            if (
+                not isinstance(fetch_result, FetchFailReason)
+                or fetch_result == FetchFailReason.FILTERED
+            ):
+                break
+
+    assert fetch_result is not None
+
+    return fetch_result
+
+
+BatchArgs = Iterable[FetchFailReason | ProcessJSON]
+
+
+async def run_batch(
+    batch: Iterable[Coroutine[BatchArgs, BatchArgs, FetchResult]]
+) -> Iterable[FetchResult]:
+    return await asyncio.gather(*batch)
+
+
+async def discover_processes(
+    sequential_numbers: list[int],
+    year: int,
+    segment: JudicialSegment,
+    tj: TJ,
+    filter_function: FilterFunction,
+    cache_path: Path,
+    sink: Path,
+    batch_size: int = 100,
+) -> int:
+    total = 0
+    async with aiohttp.ClientSession(trust_env=True) as session:
+        semaphore = asyncio.Semaphore(value=batch_size)
+        requests = (
+            try_combinations(
+                session,
+                semaphore,
+                CNJNumberCombination(number, year, segment, tj),
+                filter_function,
+                cache_path,
+            )
+            for number in sequential_numbers
+        )
+        for i, batch in enumerate(chunks(requests, 1000), start=1):
+            print(f"\n--\n-- Batch: {i}")
+            results = await run_batch(batch)
+            # results: Iterable[FetchResult] = await asyncio.gather(*batch)
+            processes = []
+            filtered = 0
+            invalid = 0
+            for result in results:
+                match result:
+                    case FetchFailReason.FILTERED:
+                        filtered += 1
+                    case FetchFailReason.INVALID:
+                        invalid += 1
+                    case dict() as process:
+                        processes.append(process)
+
+            write_to_sink(processes, sink, reason=f"Fetched (Batch {i})")
+
+            partial_ids = [get_process_id(process) for process in processes]
+
+            print(
+                f"Partial result: {partial_ids}"
+                f" ({filtered} filtered, {invalid} invalid)"
+            )
+            total += len(processes)
+        return total
+
+
 def discover_with_json_api(
     combinations: CNJNumberCombinations,
     sink: Path,
     cache_path: Path,
     filter_function: FilterFunction = lambda _: True,
-    # pylint: disable=dangerous-default-value
     force_fetch: bool = False,
+    batch_size: int = 100,
 ) -> None:
     """
     Downloads data from urls that return JSON values. Previously cached results
@@ -287,104 +431,21 @@ def discover_with_json_api(
             filter_function=filter_function,
         )
 
-    async def try_combinations(
-        session: aiohttp.ClientSession,
-        semaphore: asyncio.Semaphore,
-        combination: CNJNumberCombination,
-    ) -> FetchResult:
-        """
-        Attempts to find which combination of values for CNJ number's fields
-        result in a real process.
-        """
-        from contextlib import asynccontextmanager
-        from typing import AsyncGenerator
-
-        @asynccontextmanager
-        async def ensure_released(
-            semaphore: asyncio.Semaphore,
-        ) -> AsyncGenerator[None, None]:
-            await semaphore.acquire()
-            yield
-            semaphore.release()
-
-        test_range = CNJNumberCombinations(
-            combination.sequential_number,
-            combination.sequential_number,
-            tj=combination.tj,
-            year=combination.year,
-            segment=combination.segment,
-        )
-
-        async with ensure_released(semaphore):
-            fetch_result = None
-
-            for guess in test_range:
-                fetch_result = await fetch_process(
-                    session,
-                    guess,
-                    tj=combination.tj,
-                )
-
-                fetch_result = classify_and_cache(
-                    fetch_result, guess, cache_path, filter_function
-                )
-
-                if (
-                    not isinstance(fetch_result, FetchFailReason)
-                    or fetch_result == FetchFailReason.FILTERED
-                ):
-                    break
-
-        assert fetch_result is not None
-
-        return fetch_result
-
-    async def discover_processes(sequential_numbers: list[int], step: int = 100) -> int:
-        total = 0
-        async with aiohttp.ClientSession(trust_env=True) as session:
-            semaphore = asyncio.Semaphore(value=step)
-            requests = (
-                try_combinations(
-                    session,
-                    semaphore,
-                    CNJNumberCombination(
-                        number, combinations.year, combinations.segment, combinations.tj
-                    ),
-                )
-                for number in sequential_numbers
-            )
-            print(requests)
-            for i, batch in enumerate(chunks(requests, 1000), start=1):
-                print(f"\n--\n-- Batch: {i}")
-                results: Iterable[FetchResult] = await asyncio.gather(*batch)
-                processes = []
-                filtered = 0
-                invalid = 0
-                for result in results:
-                    match result:
-                        case FetchFailReason.FILTERED:
-                            filtered += 1
-                        case FetchFailReason.INVALID:
-                            invalid += 1
-                        case dict() as process:
-                            print(f"{process=}")
-                            processes.append(process)
-
-                write_to_sink(processes, sink, reason=f"Fetched (Batch {i})")
-
-                partial_ids = [get_process_id(process) for process in processes]
-
-                print(
-                    f"Partial result: {partial_ids}"
-                    f" ({filtered} filtered, {invalid} invalid)"
-                )
-                total += len(processes)
-            return total
-
     from time import time
 
     start = time()
-    result = asyncio.run(discover_processes(not_cached_numbers))
+    result = asyncio.run(
+        discover_processes(
+            not_cached_numbers,
+            combinations.year,
+            combinations.segment,
+            combinations.tj,
+            filter_function,
+            cache_path,
+            sink,
+            batch_size=batch_size,
+        )
+    )
     end = time()
 
     total_items: int = result

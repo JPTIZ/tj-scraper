@@ -50,6 +50,7 @@ MOCKED_TJRJ_BACKEND_DB: Mapping[str, ProcessJSON] = {
     },
 }
 
+
 REAL_IDS = {k: str(v["codProc"]) for k, v in MOCKED_TJRJ_BACKEND_DB.items()}
 CNJ_IDS = {k: str(v["codCnj"]) for k, v in MOCKED_TJRJ_BACKEND_DB.items()}
 
