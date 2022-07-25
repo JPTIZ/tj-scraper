@@ -1,20 +1,24 @@
 """Deals with export formats."""
 from collections.abc import Collection
 from pathlib import Path
+from typing import Mapping, TypeVar
 
 import openpyxl
 
 from .process import Object, ProcessJSON
 
+Key = TypeVar("Key")
+Value = TypeVar("Value")
+
 
 def select_fields(
-    processes: Collection[ProcessJSON], fields: Collection[str]
-) -> Collection[ProcessJSON]:
+    objects: Collection[Mapping[Key, Value]], fields: Collection[Key]
+) -> Collection[Mapping[Key, Value]]:
     """
-    Returns a new collection of process containing only fields described in
+    Returns a new collection of mappign objects containing only fields described in
     `fields.`
     """
-    return [{k: v for k, v in process.items() if k in fields} for process in processes]
+    return [{k: v for k, v in mapping.items() if k in fields} for mapping in objects]
 
 
 def flatten(process_: ProcessJSON) -> dict[str, str]:

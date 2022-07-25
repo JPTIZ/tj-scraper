@@ -7,22 +7,29 @@ from pathlib import Path
 from typing import Any, Callable, Generator
 
 from scrapy.crawler import CrawlerRunner, Spider
-from scrapy.http import Response
+from scrapy.http import TextResponse
 from twisted.internet import reactor
 
-from .errors import InvalidProcessNumber
+from .errors import BlockedByCaptcha, InvalidProcessNumber
 from .process import ProcessJSON
 from .url import build_tjrj_process_url
 
 
-def check_for_captcha(process_id: str, response: Response) -> tuple[str, Response]:
+def check_for_captcha(
+    process_id: str, response: TextResponse
+) -> tuple[str, TextResponse]:
     """
     Raises a `BlockedByCaptcha` if response page has a captcha on it.
     """
+    captcha_xpath = '//*[@id="container_captcha"]'
+
+    if response.xpath(captcha_xpath):
+        raise BlockedByCaptcha()
+
     return process_id, response
 
 
-def check_for_valid_id(process_id: str, response: Response) -> None:
+def check_for_valid_id(process_id: str, response: TextResponse) -> None:
     """
     Raises an `BadProcessId` if response page is an error page stating the
     process_id is invalid
@@ -37,7 +44,7 @@ def check_for_valid_id(process_id: str, response: Response) -> None:
         raise InvalidProcessNumber(process_id)
 
 
-def extract_process_id(response: Response) -> str:
+def extract_process_id(response: TextResponse) -> str:
     """
     Extracts process ID from response HTML.
     """
@@ -58,13 +65,13 @@ def extract_process_id(response: Response) -> str:
     return ""
 
 
-def extract_field(response: Response, field_text: str) -> str:
+def extract_field(response: TextResponse, field_text: str) -> str:
     """Extracts the value for a given process' field in page."""
     field_xpath = f"//td[text()='{field_text}:']/following-sibling::td/text()"
     return str(response.xpath(field_xpath).get()).strip()
 
 
-def extract_page_content(response: Response) -> tuple[str, str]:
+def extract_page_content(response: TextResponse) -> tuple[str, str]:
     """
     Extracts page content. Raises exceptions if not a valid process page.
     """
@@ -92,7 +99,9 @@ class TJRJSpider(Spider):  # type: ignore
     name = "tjrj-spider"
     start_urls = [build_process_url("2007.001.209836-2")]
 
-    def parse(self, response: Response, **_: Any) -> Generator[ProcessJSON, None, None]:
+    def parse(
+        self, response: TextResponse, **_: Any
+    ) -> Generator[ProcessJSON, None, None]:
         process_id, page_content = extract_page_content(response)
 
         yield {

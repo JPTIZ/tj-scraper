@@ -1,177 +1,77 @@
 """Module for statistic data generation."""
 import cProfile
-import json
+import itertools
 import time
 from contextlib import contextmanager
+from dataclasses import asdict, dataclass
+from functools import reduce
 from pathlib import Path
+from pprint import pprint
 from pstats import SortKey, Stats
-from typing import Any, Callable, Generator, Iterable, ParamSpec, TypeVar
-
-import requests
-
-from tj_scraper.download import (
-    FetchFailReason,
-    FetchResult,
-    FilterFunction,
-    TJRequestParams,
-    TJResponse,
-    chunks,
-    classify,
-    write_to_sink,
-)
-from tj_scraper.process import (
-    TJ,
-    TJ_INFO,
-    CNJProcessNumber,
-    TJInfo,
-    get_process_id,
-    make_cnj_number_str,
-    to_cnj_number,
+from typing import (
+    Any,
+    Callable,
+    Coroutine,
+    Generator,
+    Iterable,
+    Iterator,
+    NamedTuple,
+    ParamSpec,
+    TypeVar,
 )
 
-# import tj_scraper.download
-#
-#
-# def replacement_test(*args: Any, **kwargs: Any) -> None:
-#     print(f"replacement_test({args=}, {kwargs=})")
-#
-#
-# setattr(tj_scraper.download, "download_from_json", replacement_test)
-
-
-def fetch_process(
-    session: requests.Session,
-    cnj_number: CNJProcessNumber,
-    tj: TJ,
-) -> FetchResult:
-    """
-    Fetches a single process from `url`, applying filters and reporting whether
-    the result is selected, failed on captcha or etc. Returns the process if it
-    is selected, else returns `None`.
-    """
-    # TODO: É possível criar um "parou aqui" para poder continuar o trabalho em
-    # momentos variados: basta salvar o último "batch" (conjunto de NNNNNNN's,
-    # DD's e OOOO's).
-
-    cnj_number_str = make_cnj_number_str(cnj_number)
-
-    request_args = TJRequestParams(tipoProcesso="1", codigoProcesso=cnj_number_str)
-
-    # cnj_endpoint
-    raw_response: TJResponse
-    if tj.name == "rj":
-        with session.post(
-            tj.cnj_endpoint,
-            json=request_args,
-            verify=False,  # FIXME: Properly handle TJ's outdated certificate
-        ) as response:
-            raw_response = json.loads(response.text)
-
-        fetch_result = classify(raw_response, cnj_number, tj)
-
-        print(f"{request_args=} = {fetch_result}")
-
-        if isinstance(fetch_result, FetchFailReason):
-            return fetch_result
-
-        request_args = TJRequestParams(
-            tipoProcesso=str(fetch_result.get("tipoProcesso")),
-            codigoProcesso=str(fetch_result.get("numProcesso")),
-        )
-    else:
-        request_args = TJRequestParams(tipoProcesso="1", codigoProcesso=cnj_number_str)
-
-    # main_endpoint
-    with session.post(
-        tj.main_endpoint,
-        json=request_args,
-        verify=False,  # FIXME: Properly handle TJ's outdated certificate
-    ) as response:
-        raw_response = json.loads(response.text)
-
-    return classify(raw_response, cnj_number, tj)
-
-
-def fetch_and_eval(
-    session: requests.Session,
-    cnj_number: CNJProcessNumber,
-    tj_info: TJInfo,
-    cache_path: Path,
-    filter_function: FilterFunction,
-) -> FetchResult:
-    """
-    Attempts to fetch a process number by trying many combinations of
-    verification digits and source units.
-    """
-    _ = session, cnj_number, tj_info, cache_path, filter_function
-    raise NotImplementedError(
-        "TODO: call tj_scraper.download.try_combinations as it was sync."
-    )
-
-
-def fetch_all_processes(
-    numbers: list[CNJProcessNumber],
-    tj_info: TJInfo,
-    cache_path: Path,
-    filter_function: FilterFunction,
-    sink: Path,
-) -> int:
-    """Fetches all processes with specified numbers."""
-    # pylint: disable=too-many-locals
-    total = 0
-    with requests.Session() as session:
-        requests_ = (
-            fetch_and_eval(session, number, tj_info, cache_path, filter_function)
-            for number in numbers
-        )
-        for i, batch in enumerate(chunks(requests_, 1000), start=1):
-            print(f"\n--\n-- Wave: {i}")
-            results: Iterable[FetchResult] = batch
-            processes = []
-            filtered = 0
-            invalid = 0
-            for result in results:
-                match result:
-                    case FetchFailReason.FILTERED:
-                        filtered += 1
-                    case FetchFailReason.INVALID:
-                        invalid += 1
-                    case dict() as process:
-                        print(f"{process=}")
-                        processes.append(process)
-
-            write_to_sink(processes, sink, reason=f"Fetched (Batch {i})")
-
-            partial_ids = [get_process_id(process) for process in processes]
-
-            print(
-                f"Partial result: {partial_ids}"
-                f" ({filtered} filtered, {invalid} invalid)"
-            )
-            total += len(processes)
-        return total
-
-
-def download_from_json(
-    ids: list[CNJProcessNumber],
-    sink: Path,
-    cache_path: Path,
-    filter_function: FilterFunction = lambda _: True,
-    # pylint: disable=dangerous-default-value
-    tj_info: TJInfo = TJ_INFO,
-    force_fetch: bool = False,
-) -> None:
-    """
-    Downloads data from urls that return JSON values. Previously cached results
-    are used by default if `force_fetch` is not set to `True`.
-    """
-    _ = ids, sink, cache_path, filter_function, tj_info, force_fetch
-    raise NotImplementedError(
-        "TODO: call tj_scraper.download.discover_from_json_api as it was sync."
-    )
-
+import tj_scraper.download
+from tj_scraper.download import BatchArgs, FetchResult, discover_with_json_api
+from tj_scraper.process import TJ_INFO, CNJNumberCombinations, JudicialSegment
 
 CACHE_PATH = Path("b.db")
+STATS_PATH = Path("profile-stats.stat")
+
+
+class ProfileParams(NamedTuple):
+    as_async: bool
+    sequence_start: int
+    sequence_len: int
+    batch_size: int
+
+
+@dataclass(frozen=True)
+class ProfileParamsSetup:
+    """Combinations of parameters that will be used to generate statistics."""
+
+    as_async: list[bool]
+    sequence_starts: list[int]
+    sequence_lens: list[int]
+    batch_sizes: list[int]
+
+    def __iter__(self) -> Iterator[ProfileParams]:
+        combinations = itertools.product(*[params for params in asdict(self).values()])
+        for params in combinations:
+            param = ProfileParams(*params)
+            if not param.as_async and param.batch_size > 1:
+                continue
+            yield param
+
+
+def download_function(params: ProfileParams) -> None:
+    # Useful numbers:
+    #     "0015712-81.2021.8.19.0004",
+    #     "0005751-35.1978.8.19.0001",
+    #     "0196091-26.2021.8.19.0001",
+    combinations = CNJNumberCombinations(
+        sequence_start=params.sequence_start,
+        sequence_end=params.sequence_start + params.sequence_len,
+        tj=TJ_INFO.tjs["rj"],
+        year=2021,
+        segment=JudicialSegment.JEDFT,
+    )
+
+    discover_with_json_api(
+        combinations=combinations,
+        sink=Path("a.jsonl"),
+        cache_path=CACHE_PATH,
+        batch_size=params.batch_size,
+    )
 
 
 @contextmanager
@@ -201,19 +101,7 @@ def io_timer() -> float:
     return timing.elapsed - (timing.system + timing.user)
 
 
-def fake_download_from_json(*_: Any, **__: Any) -> None:
-    """Fake download function to test timing functions."""
-    print("fake")
-
-    x: list[int] = []
-    for i in range(100):
-        x.insert(i, 0)
-    time.sleep(1)
-
-
 cpu_timer = time.process_time
-
-STATS_PATH = Path("profile-stats.txt")
 
 Time = int | float
 Timer = Callable[[], Time]
@@ -222,26 +110,48 @@ Return = TypeVar("Return")
 Args = ParamSpec("Args")
 
 
-def profile(function: Callable[Args, Any], timer: Timer | None) -> None:
+def profile(
+    function: Callable[Args, Any],
+    timer: Timer | None,
+    output: Path,
+    keep_cache: bool = False,
+    *args: Args.args,
+    **kwargs: Args.kwargs,
+) -> None:
     """Measures execution time of a function. Time is calculated using `timer`."""
     timer_arg: dict[str, Any] = {"timer": timer} if timer is not None else {}
 
     profiler = cProfile.Profile(**timer_arg)
 
-    with autodelete(CACHE_PATH):
-        profiler.runcall(function)
+    if keep_cache:
+        profiler.runcall(function, *args, **kwargs)
+    else:
+        with autodelete(CACHE_PATH):
+            profiler.runcall(function, *args, **kwargs)
 
     profiler.create_stats()
 
     stats = Stats(profiler)
-    stats.dump_stats(STATS_PATH)
+    stats.dump_stats(output)
 
-    profiler.print_stats(sort="cumtime")
+    stats.sort_stats(SortKey.CUMULATIVE)
+    stats.print_stats(10)
 
 
-def view_profile(path: Path) -> None:
+@dataclass
+class ProfileTimes:
+    total: float
+    network: float
+
+
+def view_profile(path: Path) -> ProfileTimes | None:
     """Shows previously profiled data."""
-    stats = Stats(path.resolve().as_posix())
+    print("👀 (início)")
+    try:
+        stats = Stats(path.resolve().as_posix())
+    except FileNotFoundError:
+        print(f"{path.resolve().as_posix()} not found. Skipping...")
+        return
     profile_stats = stats.get_stats_profile()
     from pprint import pprint
 
@@ -273,39 +183,349 @@ def view_profile(path: Path) -> None:
     print(f"Network time: {network_time}")
     print(f"Non-Network time: {total_time - network_time}")
     stats.sort_stats(SortKey.CUMULATIVE)
-    stats.print_stats()
+    stats.print_stats(10)
+    print("👀 (fim)")
+    return ProfileTimes(total=total_time, network=network_time)
+
+
+def profile_and_dump(
+    function: Callable[[ProfileParams], None],
+    timer: Timer | None,
+    params_setup: ProfileParamsSetup,
+    keep_cache: bool = False,
+) -> None:
+    run_batch_async = getattr(tj_scraper.download, "run_batch")
+
+    async def run_batch(
+        as_async: bool, batch: Iterable[Coroutine[BatchArgs, BatchArgs, FetchResult]]
+    ) -> Iterable[FetchResult]:
+        if as_async:
+            return await run_batch_async(batch)
+        else:
+            return [await coro for coro in batch]
+
+    for params in params_setup:
+        print(f"⬇️ (início -- {params})")
+        stats_path = make_stats_path(params)
+
+        setattr(
+            tj_scraper.download,
+            "run_batch",
+            lambda batch: run_batch(params.as_async, batch),
+        )
+
+        profile(function, timer, stats_path, keep_cache, params)
+        print("⬇️ (fim -- {stats_path.as_posix()})")
+
+
+def make_stats_path(params: ProfileParams) -> Path:
+    sync = "sync" if not params.as_async else "async"
+    params_as_dict = params._asdict()
+    stem = "-".join(f"{k}_{v}" for k, v in params_as_dict.items() if k != "as_async")
+    return STATS_PATH.with_stem(f"{STATS_PATH.stem}-{sync}-{stem}")
+
+
+Object = dict[Any, Any]
+
+
+def group_by(mappings: list[dict[Any, Any]], field: Any) -> dict[Any, Any]:
+    grouped = {}
+    for profile in mappings:
+        new_entry = {k: v for k, v in profile.items() if k != field}
+        key = profile[field]
+        try:
+            grouped[key] += [new_entry]
+        except KeyError:
+            grouped[key] = [new_entry]
+    return grouped
+
+
+def aggregate(
+    objects: list[Object],
+    agg_function: Callable[[Object, Object], Object],
+) -> Object:
+    return reduce(agg_function, objects)
+
+
+def plot_csv(output: Path, csv_data: list[Object]) -> None:
+    from csv import DictWriter
+
+    with open(Path(output), "w") as csvfile:
+        fieldnames = [k for k in csv_data[0].keys()]
+        writer = DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for entry in csv_data:
+            writer.writerow(entry)
+
+
+from typing import TypedDict
+
+
+class GroupedInner(TypedDict):
+    profile: ProfileTimes
+    count: int
+
+
+Grouped = dict[Any, dict[Any, list[GroupedInner]]]
+Aggregated = dict[Any, dict[Any, GroupedInner]]
+
+
+def agg_profiles(grouped: Grouped) -> Aggregated:
+    def aggr(agg: GroupedInner, profile: GroupedInner) -> GroupedInner:
+        return {
+            "profile": ProfileTimes(
+                agg["profile"].total + profile["profile"].total,
+                agg["profile"].network + profile["profile"].network,
+            ),
+            "count": agg.get("count", 1) + 1,
+        }
+
+    return {
+        k: {
+            k2: reduce(
+                aggr,
+                v2,
+            )
+            for k2, v2 in v.items()
+        }
+        for k, v in grouped.items()
+    }
+
+
+def cache_op(op: str, timer: Timer | None = None) -> None:
+    cache_params = [
+        ProfileParams(
+            as_async=True, sequence_start=15712, sequence_len=1000, batch_size=100
+        ),
+        ProfileParams(
+            as_async=True, sequence_start=16212, sequence_len=1000, batch_size=100
+        ),
+    ]
+
+    def make_stats_path_cache(params: ProfileParams) -> Path:
+        return Path(
+            f"profile-stats-cache-diff-{params.sequence_start}-{params.sequence_len}.stat"
+        )
+
+    if op == "dump":
+        CACHE_PATH.unlink(missing_ok=True)
+
+        print("A1 & A2...")
+        with no_stdout(), autodelete(CACHE_PATH):
+            for params in cache_params:
+                profile(
+                    download_function,
+                    timer,
+                    make_stats_path_cache(params),
+                    True,
+                    params,
+                )
+
+        print("B...")
+        with no_stdout(), autodelete(CACHE_PATH):
+            params = cache_params[1]
+            profile(
+                download_function,
+                timer,
+                Path("profile-stats-cache-diff-only-second.stat"),
+                True,
+                params,
+            )
+
+        print("C...")
+        with no_stdout(), autodelete(CACHE_PATH):
+            params = ProfileParams(
+                as_async=True,
+                sequence_start=cache_params[0].sequence_start,
+                sequence_len=1500,
+                batch_size=100,
+            )
+            profile(
+                download_function,
+                timer,
+                Path("profile-stats-cache-diff-full.stat"),
+                True,
+                params,
+            )
+            profile(
+                download_function,
+                timer,
+                Path("profile-stats-cache-diff-full-second.stat"),
+                True,
+                params,
+            )
+        print("[D]one.")
+    elif op == "view":
+        cache_profiles_paths = [
+            *[make_stats_path_cache(params) for params in cache_params],
+            *[
+                Path(path)
+                for path in [
+                    "profile-stats-cache-diff-only-second.stat",
+                    "profile-stats-cache-diff-full.stat",
+                    "profile-stats-cache-diff-full-second.stat",
+                ]
+            ],
+        ]
+        cache_profiles = [
+            {path.as_posix(): view_profile(path)} for path in cache_profiles_paths
+        ]
+        print(f"Cache profiles {cache_params}:")
+        pprint(cache_profiles)
+
+        # agg = agg_profiles(cache_profiles)
 
 
 def main() -> None:
     """Statistics generation."""
-    ids = [
-        to_cnj_number(number)
-        for number in [
-            "0015712-81.2021.8.19.0004",
-            # "0005751-35.1978.8.19.0001",
-            # "0196091-26.2021.8.19.0001",
-        ]
-    ]
-    # pylint: disable=unnecessary-lambda-assignment
-    # flake8: noqa: e731
-    function = lambda: download_from_json(
-        ids=ids, sink=Path("a.jsonl"), cache_path=CACHE_PATH
+    params_setup = ProfileParamsSetup(
+        as_async=[True],
+        sequence_starts=[15712],
+        sequence_lens=[10000],  # [10, 50, 100, 1000],
+        batch_sizes=[500],  # 1, 10, 100, 1000
     )
-    timer = io_timer
+
+    timer = None  # io_timer
 
     import sys
 
     if len(sys.argv) == 1:
-        print(f"Usage: {sys.argv[0]} <dump | view>")
+        print(f"Usage: {sys.argv[0]} <dump | view | dump-cache | view-cache>")
 
-    if sys.argv[1] == "dump":
-        print("⬇️ (início)")
-        profile(function, timer)
-        print("⬇️ (fim)")
-    if sys.argv[1] == "view":
-        print("👀 (início)")
-        view_profile(STATS_PATH)
-        print("👀 (fim)")
+    _, op, *args = sys.argv
+
+    if op == "dump-cache":
+        cache_op("dump", timer)
+    if op == "view-cache":
+        cache_op("view")
+    if op == "dump":
+        combs = sum(
+            [
+                params.sequence_len * params.batch_size
+                if params.as_async
+                else params.sequence_len
+                for params in params_setup
+            ]
+        )
+
+        if input(f"Combinations: {combs}. Continue? (y/n)") == "n":
+            return
+        profile_and_dump(download_function, timer, params_setup)
+    if op == "view":
+        headers = {
+            "sequence_len": "Nº de processos",
+            "batch_size": "Tamanho do bloco",
+            "network_time": "IO de Rede",
+            "cpu_time": "CPU",
+            "total_time": "IO + CPU",
+            "network_time_sync": "IO de Rede (Sync)",
+            "cpu_time_sync": "CPU (Sync)",
+            "total_time_sync": "IO + CPU (Sync)",
+            "network_time_async": "IO de Rede (Async)",
+            "cpu_time_async": "CPU (Async)",
+            "total_time_async": "IO + CPU (Async)",
+        }
+
+        profiles = [
+            {**params._asdict(), "profile": profile_data}
+            for params in params_setup
+            if (profile_data := view_profile(make_stats_path(params))) is not None
+        ]
+
+        pprint(profiles)
+
+        csv_data = []
+
+        if "--plot-sync-async" in args:
+            grouped = group_by(profiles, "sequence_len")
+            grouped = {k: group_by(group, "as_async") for k, group in grouped.items()}
+            pprint(grouped)
+            grouped = agg_profiles(grouped)
+
+            csv_data = []
+            for sequence_len, group in grouped.items():
+                sync_group = group[False]
+                async_group = group[True]
+                sync_profile = sync_group["profile"]
+                async_profile = async_group["profile"]
+
+                print(f"{sequence_len=}")
+                input("Sync Profile:")
+                pprint(sync_group)
+                input("Async Profile:")
+                pprint(async_group)
+                input("Done.")
+
+                csv_data.append(
+                    {
+                        headers["sequence_len"]: sequence_len,
+                        headers["network_time_sync"]: sync_profile.network
+                        / sync_group.get("count", 1),
+                        headers["cpu_time_sync"]: (
+                            sync_profile.total - sync_profile.network
+                        )
+                        / sync_group.get("count", 1),
+                        headers["network_time_async"]: async_profile.network
+                        / async_group.get("count", 1),
+                        headers["cpu_time_async"]: (
+                            async_profile.total - async_profile.network
+                        )
+                        / async_group.get("count", 1),
+                    }
+                )
+            plot_csv(Path("io_stats-sync-async.csv"), csv_data)
+
+        if "--plot-async-by-batch-size" in args:
+            grouped = group_by(profiles, "batch_size")
+            grouped = {
+                k: [item for item in group if item["as_async"]]
+                for k, group in grouped.items()
+                if k > 1
+            }
+            grouped = {
+                k: group_by(group, "sequence_len") for k, group in grouped.items()
+            }
+            grouped = agg_profiles(grouped)
+            pprint(grouped)
+
+            csv_data = []
+            for batch_size, groups in grouped.items():
+                csv_data.append(
+                    {
+                        headers["batch_size"]: batch_size,
+                        **{
+                            f"{headers['sequence_len']}: {sequence_len}": group[
+                                "profile"
+                            ].total
+                            for sequence_len, group in groups.items()
+                        },
+                    }
+                )
+
+            pprint(csv_data)
+            plot_csv(Path("io_stats-batch-size.csv"), csv_data)
+
+        if "--plot-sync-io-cpu-by-num-proc" in args:
+            grouped = group_by(profiles, "as_async")
+            grouped = {
+                k: group_by(group, "sequence_len")
+                for k, group in grouped.items()
+                if not k
+            }
+            grouped = agg_profiles(grouped)
+
+            csv_data = []
+            for sequence_len, group in grouped[False].items():
+                csv_data.append(
+                    {
+                        headers["sequence_len"]: sequence_len,
+                        headers["network_time"]: group["profile"].network,
+                        headers["cpu_time"]: group["profile"].total
+                        - group["profile"].network,
+                    }
+                )
+            plot_csv(Path("io_stats-io-cpu-by-num-proc.csv"), csv_data)
+    print("👀 (fim de tudo)")
 
 
 if __name__ == "__main__":
