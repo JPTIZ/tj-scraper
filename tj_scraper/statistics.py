@@ -17,6 +17,7 @@ from typing import (
     Iterator,
     NamedTuple,
     ParamSpec,
+    TypedDict,
     TypeVar,
 )
 
@@ -29,6 +30,8 @@ STATS_PATH = Path("profile-stats.stat")
 
 
 class ProfileParams(NamedTuple):
+    """Parameters used in a single profiling."""
+
     as_async: bool
     sequence_start: int
     sequence_len: int
@@ -45,7 +48,7 @@ class ProfileParamsSetup:
     batch_sizes: list[int]
 
     def __iter__(self) -> Iterator[ProfileParams]:
-        combinations = itertools.product(*[params for params in asdict(self).values()])
+        combinations = itertools.product(*list(asdict(self).values()))
         for params in combinations:
             param = ProfileParams(*params)
             if not param.as_async and param.batch_size > 1:
@@ -54,6 +57,10 @@ class ProfileParamsSetup:
 
 
 def download_function(params: ProfileParams) -> None:
+    """
+    Prepares parameters for download function according to profile params and
+    calls it.
+    """
     # Useful numbers:
     #     "0015712-81.2021.8.19.0004",
     #     "0005751-35.1978.8.19.0001",
@@ -110,6 +117,7 @@ Return = TypeVar("Return")
 Args = ParamSpec("Args")
 
 
+# pylint: disable=keyword-arg-before-vararg
 def profile(
     function: Callable[Args, Any],
     timer: Timer | None,
@@ -140,6 +148,8 @@ def profile(
 
 @dataclass
 class ProfileTimes:
+    """Timing results of a profile."""
+
     total: float
     network: float
 
@@ -151,9 +161,8 @@ def view_profile(path: Path) -> ProfileTimes | None:
         stats = Stats(path.resolve().as_posix())
     except FileNotFoundError:
         print(f"{path.resolve().as_posix()} not found. Skipping...")
-        return
+        return None
     profile_stats = stats.get_stats_profile()
-    from pprint import pprint
 
     total_time = profile_stats.total_tt
     function_profiles = profile_stats.func_profiles
@@ -177,7 +186,7 @@ def view_profile(path: Path) -> ProfileTimes | None:
             pass
     if network_time == -1:
         print("Failed to get network time (now known poll function found).")
-        return
+        return None
 
     print(f"Total time: {total_time}")
     print(f"Network time: {network_time}")
@@ -194,15 +203,22 @@ def profile_and_dump(
     params_setup: ProfileParamsSetup,
     keep_cache: bool = False,
 ) -> None:
+    """
+    Profiles a function with a specific timer with a combination of different
+    parameters and dumps its result.
+    """
     run_batch_async = getattr(tj_scraper.download, "run_batch")
 
+    Batch = Coroutine[BatchArgs, BatchArgs, FetchResult]
+
     async def run_batch(
-        as_async: bool, batch: Iterable[Coroutine[BatchArgs, BatchArgs, FetchResult]]
+        as_async: bool, batch: Iterable[Batch]
     ) -> Iterable[FetchResult]:
         if as_async:
             return await run_batch_async(batch)
-        else:
-            return [await coro for coro in batch]
+        return [await coro for coro in batch]
+
+    from functools import partial
 
     for params in params_setup:
         print(f"⬇️ (início -- {params})")
@@ -211,7 +227,7 @@ def profile_and_dump(
         setattr(
             tj_scraper.download,
             "run_batch",
-            lambda batch: run_batch(params.as_async, batch),
+            partial(run_batch, params.as_async),
         )
 
         profile(function, timer, stats_path, keep_cache, params)
@@ -219,6 +235,10 @@ def profile_and_dump(
 
 
 def make_stats_path(params: ProfileParams) -> Path:
+    """
+    Creates a standardized path for the output file of profiles according to
+    the parameters used to run them.
+    """
     sync = "sync" if not params.as_async else "async"
     params_as_dict = params._asdict()
     stem = "-".join(f"{k}_{v}" for k, v in params_as_dict.items() if k != "as_async")
@@ -229,10 +249,11 @@ Object = dict[Any, Any]
 
 
 def group_by(mappings: list[dict[Any, Any]], field: Any) -> dict[Any, Any]:
-    grouped = {}
-    for profile in mappings:
-        new_entry = {k: v for k, v in profile.items() if k != field}
-        key = profile[field]
+    """Groups mappings by a specific field into a single mapping."""
+    grouped: dict[Any, Any] = {}
+    for profile_result in mappings:
+        new_entry = {k: v for k, v in profile_result.items() if k != field}
+        key = profile_result[field]
         try:
             grouped[key] += [new_entry]
         except KeyError:
@@ -244,24 +265,27 @@ def aggregate(
     objects: list[Object],
     agg_function: Callable[[Object, Object], Object],
 ) -> Object:
+    """A typed wrapper for reduce."""
     return reduce(agg_function, objects)
 
 
 def plot_csv(output: Path, csv_data: list[Object]) -> None:
+    """Plots csv data into output."""
     from csv import DictWriter
 
-    with open(Path(output), "w") as csvfile:
-        fieldnames = [k for k in csv_data[0].keys()]
+    with open(Path(output), "w", encoding="utf-8") as csvfile:
+        fieldnames = list(csv_data[0].keys())
         writer = DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for entry in csv_data:
             writer.writerow(entry)
 
 
-from typing import TypedDict
-
-
 class GroupedInner(TypedDict):
+    """
+    Innermost part of a grouped object generated with `group_by` function.
+    """
+
     profile: ProfileTimes
     count: int
 
@@ -271,11 +295,15 @@ Aggregated = dict[Any, dict[Any, GroupedInner]]
 
 
 def agg_profiles(grouped: Grouped) -> Aggregated:
-    def aggr(agg: GroupedInner, profile: GroupedInner) -> GroupedInner:
+    """
+    Modifies profile list of a Grouped object to a single summarized profile.
+    """
+
+    def aggr(agg: GroupedInner, profile_data: GroupedInner) -> GroupedInner:
         return {
             "profile": ProfileTimes(
-                agg["profile"].total + profile["profile"].total,
-                agg["profile"].network + profile["profile"].network,
+                agg["profile"].total + profile_data["profile"].total,
+                agg["profile"].network + profile_data["profile"].network,
             ),
             "count": agg.get("count", 1) + 1,
         }
@@ -293,6 +321,7 @@ def agg_profiles(grouped: Grouped) -> Aggregated:
 
 
 def cache_op(op: str, timer: Timer | None = None) -> None:
+    """Run a cache operation."""
     cache_params = [
         ProfileParams(
             as_async=True, sequence_start=15712, sequence_len=1000, batch_size=100
@@ -304,7 +333,9 @@ def cache_op(op: str, timer: Timer | None = None) -> None:
 
     def make_stats_path_cache(params: ProfileParams) -> Path:
         return Path(
-            f"profile-stats-cache-diff-{params.sequence_start}-{params.sequence_len}.stat"
+            "profile-stats-cache-diff"
+            f"-{params.sequence_start}"
+            f"-{params.sequence_len}.stat"
         )
 
     if op == "dump":
@@ -376,6 +407,43 @@ def cache_op(op: str, timer: Timer | None = None) -> None:
         # agg = agg_profiles(cache_profiles)
 
 
+def generate_sync_async_csv(profiles: list[Object], headers: dict[str, str]) -> None:
+    """Generates sync/async comparison data and saves it in a CSV file."""
+    grouped = group_by(profiles, "sequence_len")
+    grouped = {k: group_by(group, "as_async") for k, group in grouped.items()}
+    pprint(grouped)
+    grouped = agg_profiles(grouped)
+
+    csv_data = []
+    for sequence_len, group in grouped.items():
+        sync_group = group[False]
+        async_group = group[True]
+        sync_profile = sync_group["profile"]
+        async_profile = async_group["profile"]
+
+        print(f"{sequence_len=}")
+        input("Sync Profile:")
+        pprint(sync_group)
+        input("Async Profile:")
+        pprint(async_group)
+        input("Done.")
+
+        csv_data.append(
+            {
+                headers["sequence_len"]: sequence_len,
+                headers["network_time_sync"]: sync_profile.network
+                / sync_group.get("count", 1),
+                headers["cpu_time_sync"]: (sync_profile.total - sync_profile.network)
+                / sync_group.get("count", 1),
+                headers["network_time_async"]: async_profile.network
+                / async_group.get("count", 1),
+                headers["cpu_time_async"]: (async_profile.total - async_profile.network)
+                / async_group.get("count", 1),
+            }
+        )
+    plot_csv(Path("io_stats-sync-async.csv"), csv_data)
+
+
 def main() -> None:
     """Statistics generation."""
     params_setup = ProfileParamsSetup(
@@ -400,12 +468,10 @@ def main() -> None:
         cache_op("view")
     if op == "dump":
         combs = sum(
-            [
-                params.sequence_len * params.batch_size
-                if params.as_async
-                else params.sequence_len
-                for params in params_setup
-            ]
+            params.sequence_len * params.batch_size
+            if params.as_async
+            else params.sequence_len
+            for params in params_setup
         )
 
         if input(f"Combinations: {combs}. Continue? (y/n)") == "n":
@@ -434,46 +500,8 @@ def main() -> None:
 
         pprint(profiles)
 
-        csv_data = []
-
         if "--plot-sync-async" in args:
-            grouped = group_by(profiles, "sequence_len")
-            grouped = {k: group_by(group, "as_async") for k, group in grouped.items()}
-            pprint(grouped)
-            grouped = agg_profiles(grouped)
-
-            csv_data = []
-            for sequence_len, group in grouped.items():
-                sync_group = group[False]
-                async_group = group[True]
-                sync_profile = sync_group["profile"]
-                async_profile = async_group["profile"]
-
-                print(f"{sequence_len=}")
-                input("Sync Profile:")
-                pprint(sync_group)
-                input("Async Profile:")
-                pprint(async_group)
-                input("Done.")
-
-                csv_data.append(
-                    {
-                        headers["sequence_len"]: sequence_len,
-                        headers["network_time_sync"]: sync_profile.network
-                        / sync_group.get("count", 1),
-                        headers["cpu_time_sync"]: (
-                            sync_profile.total - sync_profile.network
-                        )
-                        / sync_group.get("count", 1),
-                        headers["network_time_async"]: async_profile.network
-                        / async_group.get("count", 1),
-                        headers["cpu_time_async"]: (
-                            async_profile.total - async_profile.network
-                        )
-                        / async_group.get("count", 1),
-                    }
-                )
-            plot_csv(Path("io_stats-sync-async.csv"), csv_data)
+            generate_sync_async_csv(profiles, headers)
 
         if "--plot-async-by-batch-size" in args:
             grouped = group_by(profiles, "batch_size")

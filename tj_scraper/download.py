@@ -158,7 +158,8 @@ def classify(
     from pprint import pformat
 
     raise UnknownTJResponse(
-        f"TJ-{tj.name.upper()} endpoint responded with unknown message format ({type(response)=}) for input {cnj_number}:\n"
+        f"TJ-{tj.name.upper()} endpoint responded with unknown message format"
+        f" ({type(response)=}) for input {cnj_number}:\n"
         f" {pformat(response)}"
     )
     # [{'assunto': 'Antecipação de Tutela / Tutela Específica / Processo e '
@@ -348,7 +349,40 @@ BatchArgs = Iterable[FetchFailReason | ProcessJSON]
 async def run_batch(
     batch: Iterable[Coroutine[BatchArgs, BatchArgs, FetchResult]]
 ) -> Iterable[FetchResult]:
+    """
+    Runs a batch of coroutines. Used to isolate async dispatch for sync
+    simulation in statistics.py.
+    """
     return await asyncio.gather(*batch)
+
+
+@dataclass(frozen=True)
+class BatchSummary:
+    """Summary of a batch execution."""
+
+    processes: Sequence[ProcessJSON]
+    filtered: int
+    invalid: int
+
+
+def summarize_batch_results(batch_results: Iterable[FetchResult]) -> BatchSummary:
+    """Summarizes data about results from a batch of process fetch operations."""
+    processes = []
+    filtered = 0
+    invalid = 0
+    for result in batch_results:
+        match result:
+            case FetchFailReason.FILTERED:
+                filtered += 1
+            case FetchFailReason.INVALID:
+                invalid += 1
+            case dict() as process:
+                processes.append(process)
+    return BatchSummary(
+        processes=processes,
+        filtered=filtered,
+        invalid=invalid,
+    )
 
 
 async def discover_processes(
@@ -361,6 +395,10 @@ async def discover_processes(
     sink: Path,
     batch_size: int = 100,
 ) -> int:
+    """
+    Discovers valid processes existing in a NNNNNNN interval and returns how
+    many were found.
+    """
     total = 0
     async with aiohttp.ClientSession(trust_env=True) as session:
         semaphore = asyncio.Semaphore(value=batch_size)
@@ -376,29 +414,15 @@ async def discover_processes(
         )
         for i, batch in enumerate(chunks(requests, 1000), start=1):
             print(f"\n--\n-- Batch: {i}")
-            results = await run_batch(batch)
-            # results: Iterable[FetchResult] = await asyncio.gather(*batch)
-            processes = []
-            filtered = 0
-            invalid = 0
-            for result in results:
-                match result:
-                    case FetchFailReason.FILTERED:
-                        filtered += 1
-                    case FetchFailReason.INVALID:
-                        invalid += 1
-                    case dict() as process:
-                        processes.append(process)
+            summary = summarize_batch_results(await run_batch(batch))
 
-            write_to_sink(processes, sink, reason=f"Fetched (Batch {i})")
-
-            partial_ids = [get_process_id(process) for process in processes]
+            write_to_sink(summary.processes, sink, reason=f"Fetched (Batch {i})")
 
             print(
-                f"Partial result: {partial_ids}"
-                f" ({filtered} filtered, {invalid} invalid)"
+                f"Partial result: {[get_process_id(p) for p in summary.processes]}"
+                f" ({summary.filtered} filtered, {summary.invalid} invalid)"
             )
-            total += len(processes)
+            total += len(summary.processes)
         return total
 
 
