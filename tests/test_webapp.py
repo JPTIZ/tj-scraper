@@ -58,9 +58,10 @@ def test_sanity(client: FlaskClient) -> None:
     response = client.get(
         "/buscar",
         query_string={
-            "intervalo_inicio": "0000000-00.2021.8.19.0001",
-            "intervalo_fim": "0000004-00.2021.8.19.0001",
+            "intervalo_inicio": "0000000",
+            "intervalo_fim": "0000004",
             "assunto": "",
+            "ano": "2021",
             "tipo_download": "json",
         },
     )
@@ -81,9 +82,10 @@ def test_same_request_twice(client: FlaskClient) -> None:
     response = client.get(
         "/buscar",
         query_string={
-            "intervalo_inicio": "0000000-00.2021.8.19.0001",
-            "intervalo_fim": "0000004-00.2021.8.19.0001",
+            "intervalo_inicio": "0000000",
+            "intervalo_fim": "0000004",
             "assunto": "",
+            "ano": "2021",
             "tipo_download": "json",
         },
     )
@@ -91,9 +93,10 @@ def test_same_request_twice(client: FlaskClient) -> None:
     response = client.get(
         "/buscar",
         query_string={
-            "intervalo_inicio": "0000000-00.2021.8.19.0001",
-            "intervalo_fim": "0000004-00.2021.8.19.0001",
+            "intervalo_inicio": "0000000",
+            "intervalo_fim": "0000004",
             "assunto": "",
+            "ano": "2021",
             "tipo_download": "json",
         },
     )
@@ -122,9 +125,10 @@ def test_request_two_non_overlapping_returns_only_wanted(client: FlaskClient) ->
     response = client.get(
         "/buscar",
         query_string={
-            "intervalo_inicio": "0000000-00.2021.8.19.0001",
-            "intervalo_fim": "0000003-00.2021.8.19.0001",
+            "intervalo_inicio": "0000000",
+            "intervalo_fim": "0000003",
             "assunto": "",
+            "ano": "2021",
             "tipo_download": "json",
         },
     )
@@ -143,9 +147,10 @@ def test_request_two_non_overlapping_returns_only_wanted(client: FlaskClient) ->
     response = client.get(
         "/buscar",
         query_string={
-            "intervalo_inicio": "0000004-00.2021.8.19.0001",
-            "intervalo_fim": "0000004-00.2021.8.19.0001",
+            "intervalo_inicio": "0000004",
+            "intervalo_fim": "0000004",
             "assunto": "",
+            "ano": "2021",
             "tipo_download": "json",
         },
     )

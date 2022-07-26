@@ -78,7 +78,9 @@ def write_cached_to_sink(
     which are not cached.
     """
     sequence = range(combinations.sequence_start, combinations.sequence_end + 1)
-    filtered = report_time(filter_cached, sequence, cache_path=cache_path).value
+    filtered = report_time(
+        filter_cached, sequence, year=combinations.year, cache_path=cache_path
+    ).value
     print(f"{filtered=}")
 
     def cache_filter(item: DBProcess) -> bool:

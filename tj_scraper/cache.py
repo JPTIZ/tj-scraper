@@ -86,6 +86,70 @@ def quickfix_db_id_to_real_id(cache_path: Path) -> None:
             )
 
 
+def quickfix_db_id_to_cnj_id(cache_path: Path) -> None:
+    """."""
+    from tj_scraper.errors import InvalidProcessNumber
+
+    def is_invalid_number(item: str) -> bool:
+        try:
+            id_ = json.loads(item)["codCnj"]
+            print(f"::              : {id_}")
+            to_cnj_number(id_)
+            return False
+        except (InvalidProcessNumber, KeyError):
+            print("::              : passes custom filter? No")
+            return True
+        except Exception as error:
+            print(f"Failed to use custom filter: {error}")
+            raise
+
+    def _get_process_id(json_str: str) -> bool:
+        try:
+            return json.loads(json_str)["codCnj"]
+        except Exception as error:
+            print(f"Failed to use custom filter: {error}")
+            raise
+
+    def get_process_subject(json_str: str) -> bool:
+        try:
+            return json.loads(json_str).get("txtAssunto", "")
+        except Exception as error:
+            print(f"Failed to use custom filter: {error}")
+            raise
+
+    with sqlite3.connect(cache_path) as connection:
+        connection.create_function("is_invalid_number", 1, is_invalid_number)
+        cursor = connection.cursor()
+
+        cursor.execute("delete from Processos where is_invalid_number(json)")
+
+    with sqlite3.connect(cache_path) as connection:
+        connection.create_function("get_process_id", 1, _get_process_id)
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            update Processos
+            set id = get_process_id(json)
+            """
+        )
+
+    with sqlite3.connect(cache_path) as connection:
+        connection.create_function("get_process_subject", 1, get_process_subject)
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            alter table Processos
+            add column subject
+            """
+        )
+        cursor.execute(
+            """
+            update Processos
+            set subject = get_process_subject(json)
+            """
+        )
+
+
 def save_to_cache(
     item: ProcessJSON, cache_path: Path, state: CacheState = CacheState.CACHED
 ) -> None:
@@ -252,7 +316,9 @@ class Filtered:
     invalid: set[CNJProcessNumber]
 
 
-def filter_cached(sequential_numbers: Sequence[int], cache_path: Path) -> Filtered:
+def filter_cached(
+    sequential_numbers: Sequence[int], year: int, cache_path: Path
+) -> Filtered:
     """
     Classifies which processes are already cached based on its NNNNNNN field,
     since it is unique per process. When no cached process has that NNNNNNN, it
@@ -262,8 +328,9 @@ def filter_cached(sequential_numbers: Sequence[int], cache_path: Path) -> Filter
     from tj_scraper.process import JudicialSegment
 
     sequential_numbers = list(sequential_numbers)
-    print(f"filter_cached({sequential_numbers=})")
+    print(f"filter_cached({sequential_numbers=}, {cache_path=})")
     cache = load_metadata(cache_path)
+    print(f"{list(cache.states.keys())}")
 
     classified = Filtered(not_cached=set(), cached=set(), invalid=set())
 
@@ -272,6 +339,7 @@ def filter_cached(sequential_numbers: Sequence[int], cache_path: Path) -> Filter
         for raw_number, state in cache.states.items()
         if (cnj_number := to_cnj_number(raw_number)).sequential_number
         in sequential_numbers
+        and cnj_number.year == year
     }
 
     print(f"{cache_states=}")

@@ -38,7 +38,7 @@ def flatten(process_: ProcessJSON) -> dict[str, str]:
         "Número do Processo": str(process.pop("codProc")),
         "Assunto": str(process.get("txtAssunto", "Sem Assunto")),
     }
-    print(f"Flattening {result['ID do Processo']}")
+    print(f"Flattening {result['Número do Processo']}")
 
     # Fields to split
     if "advogados" in process:

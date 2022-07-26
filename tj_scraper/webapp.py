@@ -7,7 +7,15 @@ from flask.wrappers import Response as FlaskResponse
 from werkzeug.wrappers.response import Response as WerkzeugResponse
 
 from .cache import jsonl_reader, restore
-from .process import TJRJ, CNJNumberCombinations, CNJProcessNumber, to_cnj_number
+from .errors import InvalidProcessNumber
+from .process import (
+    TJRJ,
+    CNJNumberCombinations,
+    CNJProcessNumber,
+    JudicialSegment,
+    ProcessJSON,
+    to_cnj_number,
+)
 
 Response = Union[str, tuple[str | FlaskResponse | WerkzeugResponse, int]]
 
@@ -31,15 +39,18 @@ Response = Union[str, tuple[str | FlaskResponse | WerkzeugResponse, int]]
 # sobrecarregar o servidor só para mostrar alguns processos.
 
 
-def make_intervals(known_ids: list[CNJProcessNumber]) -> list[CNJNumberCombinations]:
+def make_intervals(known_ids: list[CNJProcessNumber]) -> list[tuple[int, int]]:
     """
     Creates a list of (start, end) intervals of sequential IDs in `known_ids`.
     """
     intervals = []
     start, end = min(known_ids), max(known_ids)
+
     interval_start, interval_end = start, start
+
     known_ids_set = set(known_ids)
     started_sequence = True
+
     for id_ in CNJNumberCombinations(
         start.sequential_number,
         end.sequential_number,
@@ -76,8 +87,16 @@ def make_intervals(known_ids: list[CNJProcessNumber]) -> list[CNJNumberCombinati
             )
         )
 
-    print(f"{intervals=}")
-    return intervals
+    return [(interval.sequence_start, interval.sequence_end) for interval in intervals]
+
+
+def to_cnj_number_or_none(item: ProcessJSON) -> CNJProcessNumber | None:
+    """Tries to convert item's codCnj to CNJ Number and returns None if failed."""
+    try:
+        return to_cnj_number(str(item["codCnj"]))
+    except (InvalidProcessNumber, KeyError):
+        # print(f"{list(item.keys())=}")
+        return None
 
 
 def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
@@ -87,14 +106,20 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
     app = Flask(__name__)
     # from tj_scraper.cache import quickfix_db_id_to_real_id
     # quickfix_db_id_to_real_id(cache_path)
-    from tj_scraper.timing import report_time
+    # from tj_scraper.cache import quickfix_db_id_to_cnj_id
+    # quickfix_db_id_to_cnj_id(cache_path)
+    # from tj_scraper.timing import report_time
 
     @app.route("/")
     def _root() -> Response:
-        known_ids = [
-            to_cnj_number(str(item.get("codProc"))) for item in restore(cache_path)
-        ]
-        intervals = report_time(make_intervals, known_ids).value
+        print("Hi")
+        # known_ids = [
+        #     number
+        #     for item in restore(cache_path)
+        #     if (number := to_cnj_number_or_none(item)) is not None
+        # ]
+        # intervals = report_time(make_intervals, known_ids).value
+        print("Make intervals *done*")
 
         import json
 
@@ -106,7 +131,9 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
                 intervals = json.load(file_)
         elif cache_path.exists():
             known_ids = [
-                to_cnj_number(str(item.get("codProc"))) for item in restore(cache_path)
+                number
+                for item in restore(cache_path)
+                if (number := to_cnj_number_or_none(item)) is not None
             ]
             print("Making intervals...")
             intervals = make_intervals(known_ids)
@@ -135,35 +162,40 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
                 400,
             )
 
-        start = to_cnj_number(start_arg)
-        end = to_cnj_number(end_arg)
-        id_range = CNJNumberCombinations(
-            start.sequential_number,
-            end.sequential_number,
+        year_arg = request.args.get("ano")
+        if year_arg is None:
+            return "Year must not be empty.", 400
+
+        year_arg = year_arg.lstrip("0")
+
+        number_combinations = CNJNumberCombinations(
+            int(start_arg),
+            int(end_arg),
             tj=TJRJ,
-            segment=start.segment,
-            year=start.year,
+            segment=JudicialSegment.JEDFT,
+            year=int(year_arg),
         )
-        subject = ""
+        subject = request.args.get("assunto")
 
         from tempfile import NamedTemporaryFile
 
         with NamedTemporaryFile() as sink:
             sink_file = Path(sink.name)
 
-            match request.args:
-                case {"assunto": subject}:
-                    print(f"Com assunto, {subject=}")
-                    processes_by_subject(
-                        id_range,
-                        words=subject.split(),
-                        download_function=discover_with_json_api,
-                        output=sink_file,
-                        cache_path=cache_path,
-                    )
-                case _:
-                    print(f"{subject=}")
-                    download_all_from_range(id_range, sink_file, cache_path=cache_path)
+            if subject is not None:
+                print(f"Com assunto, {subject=}")
+                processes_by_subject(
+                    number_combinations,
+                    words=subject.split(),
+                    download_function=discover_with_json_api,
+                    output=sink_file,
+                    cache_path=cache_path,
+                )
+            else:
+                print(f"{subject=}")
+                download_all_from_range(
+                    number_combinations, sink_file, cache_path=cache_path
+                )
 
             sink.seek(0)
 
@@ -174,6 +206,8 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
         if not data:
             return "Nenhum dado retornado."
 
+        subject = subject if subject is not None else ""
+
         match tipo_download := request.args.get("tipo_download"):
             case "json":
                 return jsonify(data), 200
@@ -181,7 +215,9 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
                 suffix = "_".join(subject.split())
                 filename = (
                     "Processos-TJ"
-                    f"-{id_range.sequence_start}-{id_range.sequence_end}-{suffix}.xlsx"
+                    f"-{number_combinations.sequence_start}"
+                    f"-{number_combinations.sequence_end}"
+                    f"-{suffix}.xlsx"
                 )
                 with NamedTemporaryFile() as xlsx_file:
                     from tj_scraper.export import export_to_xlsx
@@ -199,4 +235,4 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
 
 
 # FIXME: For now, it is just to ensure UWSGI will properly load this object.
-app = make_webapp()
+# app = make_webapp()

@@ -276,8 +276,6 @@ def advance(number: CNJProcessNumber, tj: TJ) -> Optional[CNJProcessNumber]:
 
             number_as_dict[field] = 0
 
-            print(f"{make_cnj_number(**number_as_dict)=}")
-
             return make_cnj_number(**number_as_dict)
 
         return zero_field

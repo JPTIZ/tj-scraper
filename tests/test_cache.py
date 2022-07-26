@@ -49,7 +49,7 @@ def test_filter_cached_ids_with_cached(cache_db: Path) -> None:
 
         save_to_cache(MOCKED_TJRJ_BACKEND_DB[cnj_number], cache_db)
 
-    assert filter_cached([1, 2, 3, 4], cache_db) == make_filtered(
+    assert filter_cached([1, 2, 3, 4], 2021, cache_db) == make_filtered(
         not_cached=not_cached, cached=cached, invalid=set()
     )
 
@@ -78,7 +78,7 @@ def test_filter_cached_ids_with_cached_and_invalid(cache_db: Path) -> None:
             MOCKED_TJRJ_BACKEND_DB[real_id], cache_db, state=CacheState.INVALID
         )
 
-    assert filter_cached([1, 2, 3, 4], cache_db) == make_filtered(
+    assert filter_cached([1, 2, 3, 4], 2021, cache_db) == make_filtered(
         not_cached=not_cached,
         cached=cached,
         invalid=invalid,
