@@ -188,7 +188,10 @@ def restore_json_for_ids(
 
     def is_id_in_list(id_: str) -> bool:
         result = to_cnj_number(id_) in ids
-        print(f":: Restoring IDs: {id_} is in {ids}? {result}")
+        ids_to_show = ids
+        if len(ids_to_show) > 20:
+            ids_to_show = [min(ids), max(ids)]
+        print(f":: Restoring IDs: {id_} is in {ids_to_show}? {result}")
         return result
 
     def custom_filter(id_: str, state: CacheState, subject: str, json_str: str) -> bool:
@@ -328,9 +331,8 @@ def filter_cached(
     from tj_scraper.process import JudicialSegment
 
     sequential_numbers = list(sequential_numbers)
-    print(f"filter_cached({sequential_numbers=}, {cache_path=})")
+    # print(f"filter_cached({sequential_numbers=}, {cache_path=})")
     cache = load_metadata(cache_path)
-    print(f"{list(cache.states.keys())}")
 
     classified = Filtered(not_cached=set(), cached=set(), invalid=set())
 
@@ -342,8 +344,6 @@ def filter_cached(
         and cnj_number.year == year
     }
 
-    print(f"{cache_states=}")
-
     for sequential_number in sequential_numbers:
         cnj_and_state = cache_states.get(
             sequential_number,
@@ -352,7 +352,6 @@ def filter_cached(
                 CacheState.NOT_CACHED,
             ),
         )
-        print(f"{sequential_number=}, {cnj_and_state}=")
 
         match cnj_and_state:
             case (cnj_number, CacheState.CACHED):

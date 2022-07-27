@@ -82,9 +82,9 @@ def flatten(process_: ProcessJSON) -> dict[str, str]:
     result["UltimoMovimentoDescricaoMov"] = str(ultimo_movimento.get("descrMov", ""))
     result["UltimoMovimentoDataMov"] = str(ultimo_movimento.get("dtMovimento", ""))
     result["UltimoMovimentoData"] = str(ultimo_movimento.get("dt", ""))
-    print("=" * 80)
+    # print("=" * 80)
 
-    result |= {f"{k[0].upper()}{k[1:]}": str(v) for k, v in process.items()}
+    # result |= {f"{k[0].upper()}{k[1:]}": str(v) for k, v in process.items()}
 
     return result
 

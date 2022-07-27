@@ -58,7 +58,7 @@ td {
     <table style="border: solid 1px black; padding: 1em">
         <tr><th>Início</th><th>Fim</th></tr>
         {% for start, end in intervals %}
-        <tr><td>{{ start }}</td><td>{{ end }}</td></tr>
+        <tr><td>{{ "%07d"|format(start) }}.AAAA.8.19.OOOO</td><td>{{ "%07d"|format(end) }}.AAAA.8.19.OOOO</td></tr>
         {% endfor %}
     <table>
 </body>

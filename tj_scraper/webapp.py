@@ -43,51 +43,27 @@ def make_intervals(known_ids: list[CNJProcessNumber]) -> list[tuple[int, int]]:
     """
     Creates a list of (start, end) intervals of sequential IDs in `known_ids`.
     """
+    known_ids = sorted(known_ids)
+
     intervals = []
-    start, end = min(known_ids), max(known_ids)
+    start, *tail = known_ids
+    end = start
+    for id_ in tail:
+        if id_.sequential_number > end.sequential_number + 1:
+            intervals.append((start, end))
+            start = id_
+        end = id_
+    last = known_ids[-1]
+    if last != end:
+        intervals.append((start, last))
 
-    interval_start, interval_end = start, start
+    from pprint import pprint
 
-    known_ids_set = set(known_ids)
-    started_sequence = True
+    pprint(intervals)
 
-    for id_ in CNJNumberCombinations(
-        start.sequential_number,
-        end.sequential_number,
-        tj=TJRJ,
-        segment=start.segment,
-        year=start.year,
-    ):
-        if id_ in known_ids_set:
-            if not started_sequence:
-                interval_start = id_
-            interval_end = id_
-            started_sequence = True
-        else:
-            if started_sequence:
-                intervals.append(
-                    CNJNumberCombinations(
-                        interval_start.sequential_number,
-                        interval_end.sequential_number,
-                        tj=TJRJ,
-                        segment=start.segment,
-                        year=start.year,
-                    )
-                )
-            started_sequence = False
-
-    if started_sequence:
-        intervals.append(
-            CNJNumberCombinations(
-                interval_start.sequential_number,
-                interval_end.sequential_number,
-                tj=TJRJ,
-                segment=start.segment,
-                year=start.year,
-            )
-        )
-
-    return [(interval.sequence_start, interval.sequence_end) for interval in intervals]
+    return [
+        (start.sequential_number, end.sequential_number) for start, end in intervals
+    ]
 
 
 def to_cnj_number_or_none(item: ProcessJSON) -> CNJProcessNumber | None:
@@ -113,12 +89,6 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
     @app.route("/")
     def _root() -> Response:
         print("Hi")
-        # known_ids = [
-        #     number
-        #     for item in restore(cache_path)
-        #     if (number := to_cnj_number_or_none(item)) is not None
-        # ]
-        # intervals = report_time(make_intervals, known_ids).value
         print("Make intervals *done*")
 
         import json

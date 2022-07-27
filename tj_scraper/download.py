@@ -58,9 +58,12 @@ def write_to_sink(items: Sequence[ProcessJSON], sink: Path, reason: str) -> None
     A quick wrapper to write all data into a sink file while reporting about
     it.
     """
+    ids_to_print = [get_process_id(item) for item in items]
+    if len(ids_to_print) > 20:
+        ids_to_print = [ids_to_print[0], ids_to_print[1]]
     with jsonlines.open(sink, "a") as output_f:
         print(
-            f"Writing {[get_process_id(item) for item in items]}\n"
+            f"Writing some ids\n"
             f"  -> Total items: {len(items)}.\n"
             f"  -> Reason: {reason}."
         )
@@ -81,7 +84,7 @@ def write_cached_to_sink(
     filtered = report_time(
         filter_cached, sequence, year=combinations.year, cache_path=cache_path
     ).value
-    print(f"{filtered=}")
+    # print(f"{filtered=}")
 
     def cache_filter(item: DBProcess) -> bool:
         return filter_function(item.json)
@@ -130,7 +133,7 @@ def classify(
     item: ProcessJSON
     items: list[str | ProcessJSON]
     match response:
-        case ["O processo informado não foi encontrado."]:
+        case ["O processo informado não foi encontrado."] | []:
             return FetchFailReason.NOT_FOUND
         case ["Número do processo inválido."]:
             return FetchFailReason.INVALID
@@ -421,7 +424,7 @@ async def discover_processes(
             write_to_sink(summary.processes, sink, reason=f"Fetched (Batch {i})")
 
             print(
-                f"Partial result: {[get_process_id(p) for p in summary.processes]}"
+                f"Partial result: {len(summary.processes)} processes downloaded"
                 f" ({summary.filtered} filtered, {summary.invalid} invalid)"
             )
             total += len(summary.processes)
@@ -440,9 +443,9 @@ def discover_with_json_api(
     Downloads data from urls that return JSON values. Previously cached results
     are used by default if `force_fetch` is not set to `True`.
     """
-    from pprint import pformat
+    # from pprint import pformat
 
-    print(f"discover_with_json_api({pformat(combinations, depth=2)})")
+    # print(f"discover_with_json_api({pformat(combinations, depth=2)})")
 
     not_cached_numbers = (
         list(range(combinations.sequence_start, combinations.sequence_end + 1))
@@ -523,9 +526,9 @@ def download_all_with_ids(
     Downloads relevant info from all valid process with ID in `ids` and saves
     it into `sink`. Expects `sink` to be in JSONLines format.
     """
-    from pprint import pformat
+    # from pprint import pformat
 
-    print(f"download_all_with_ids({pformat(combinations, depth=1)})")
+    # print(f"download_all_with_ids({pformat(combinations, depth=1)})")
     download_function(combinations, sink, cache_path, filter_function)
 
 
