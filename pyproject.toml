@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tj-scraper"
-version = "0.1.0"
+version = "0.1.2"
 description = "Scraper for brazilian's \"Tribunal de Justiça\" public portals."
 license = "GPL-3.0-or-later"
 authors = ["João Paulo Taylor Ienczak Zanette <jpaulotiz@gmail.com>"]

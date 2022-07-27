@@ -105,14 +105,14 @@ def quickfix_db_id_to_cnj_id(cache_path: Path) -> None:
 
     def _get_process_id(json_str: str) -> bool:
         try:
-            return json.loads(json_str)["codCnj"]
+            return bool(json.loads(json_str)["codCnj"])
         except Exception as error:
             print(f"Failed to use custom filter: {error}")
             raise
 
     def get_process_subject(json_str: str) -> bool:
         try:
-            return json.loads(json_str).get("txtAssunto", "")
+            return bool(json.loads(json_str).get("txtAssunto", ""))
         except Exception as error:
             print(f"Failed to use custom filter: {error}")
             raise
@@ -191,7 +191,7 @@ def restore_json_for_ids(
         ids_to_show = ids
         if len(ids_to_show) > 20:
             ids_to_show = [min(ids), max(ids)]
-        print(f":: Restoring IDs: {id_} is in {ids_to_show}? {result}")
+        # print(f":: Restoring IDs: {id_} is in {ids_to_show}? {result}")
         return result
 
     def custom_filter(id_: str, state: CacheState, subject: str, json_str: str) -> bool:
@@ -200,7 +200,7 @@ def restore_json_for_ids(
                 id_, cache_state=state, subject=subject, json=json.loads(json_str)
             )
             result = filter_function(process)
-            print(f"::              : {id_} passes custom filter? {result}")
+            # print(f"::              : {id_} passes custom filter? {result}")
             return result
         except Exception as error:
             print(f"Failed to use custom filter: {error}")
@@ -259,6 +259,25 @@ def restore(
             ).fetchall()
         )
 
+    return []
+
+
+def load_most_common_subjects(cache_path: Path, n: int = 10) -> list[tuple[str, int]]:
+    """Loads `n` most common subjects stored in cache and their count."""
+    if not cache_path.exists():
+        raise FileNotFoundError(cache_path)
+
+    with sqlite3.connect(cache_path) as connection:
+        cursor = connection.cursor()
+
+        return list(cursor.execute(
+            "select subject, count(*) as c"
+            " from Processos"
+            " where subject <> ''"
+            " group by subject"
+            " order by c desc"
+            " limit ?"
+        , (n,)))
     return []
 
 

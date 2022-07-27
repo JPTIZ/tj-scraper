@@ -1,64 +1,201 @@
 <!doctype html>
 <head>
+    <script>
+        function onChangeSubject(assuntoPredef) {
+          document.getElementById("assunto-outro").hidden = assuntoPredef.value !== "Sem Assunto";
+        }
+    </script>
 <style>
+body, html {
+  margin: 0;
+  padding: 0;
+  font-family: sans;
+}
+
+header {
+  padding: 2em;
+  background: #1f2693;
+  color: white;
+}
+
+header h1 {
+  font-family: serif;
+  padding: 0;
+  margin: 0;
+}
+
+#tjscraper-name {
+  display: flex;
+  flex-direction: column;
+}
+
+article {
+  display: flex;
+  flex-direction: column;
+/*   background: #ddd; */
+  margin-left: auto;
+  margin-right: auto;
+  width: 80em;
+  padding: 1em;
+}
+
+.result-table {
+  display: grid-row;
+}
+
+.result-head, .result-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  padding: 1em;
+}
+
+.result-head {
+  background: #bfddfc;
+}
+
+.result-row:not(:first-child) {
+  border-top: solid 1px gray;
+}
+
+.result-row:nth-child(odd) {
+  background: lightgray;
+}
+
 td {
     padding: 0 1em;
     border-bottom: solid 1px black;
 }
+
+form {
+  display: flex;
+  flex-direction: column;
+  flex-basis: 50%;
+  gap: 0.5rem;
+}
+
+form > * {
+  flex-shrink: 1;
+  flex-basis: 50%;
+}
+
+input {
+  border-radius: 0.5em;
+  border: solid 1px gray;
+  padding: 0.35em;
+}
+
+.input-with-label {
+  display: flex;
+  align-items: center;
+}
+
+.input-with-label label {
+  align-items: end;
+  margin: 0.5em;
+}
+
+select {
+  padding: 0.25em;
+}
+
+input[type=submit] {
+  align-self: center;
+  width: 10em;
+}
 </style>
 </head>
 <body>
-    <h1>Extrator de dados de TJs</h1>
-
-    <h3>Sobre</h3>
+  <header>
+    <div id="tjscraper-name">
+      <h1>TJScraper</h1>
+      Extrator de dados de TJs
+    </div>
+  </header>
+  <article>
+    <h2>Sobre</h2>
 
     Esta é uma ferramenta para permitir buscar, através de filtros
     personalizados, dados de processos dos Tribunais de Justiça do
     Brasil.
 
-    <h3>Baixar dados</h3>
+    <h2>Baixar dados</h2>
     <form action="/buscar" action="GET">
-        Intervalo de processos:<br>
+      Intervalo de processos (Numeração Unificada/CNJ):
 
+      <div class="input-with-label">
         <label for="intervalo_inicio">Início:</label>
-        <input type="text"
-            name="intervalo_inicio"
-            placeholder="Ex: 1234567"
-        >.AAAA.8.19.OOOO<br>
+        <input type="number" name="intervalo_inicio" placeholder="Ex: 1234567">.AAAA.8.19.OOOO
+      </div>
 
+      <div class="input-with-label">
         <label for="intervalo_fim">Fim:</label>
-        <input type="text"
-            name="intervalo_fim"
-            placeholder="Ex: 1234567"
-        >.AAAA.8.19.OOOO<br>
+        <input type="number" name="intervalo_fim" placeholder="Ex: 1234567">.AAAA.8.19.OOOO
+      </div>
 
+      <div class="input-with-label">
         <label for="assunto">Ano:</label>
-        <input type="number"
-            name="ano"
-            placeholder="Ex: 2021"
-        ><br>
+        <input type="number" name="ano" placeholder="Ex: 2021">
+      </div>
 
+      <div class="input-with-label">
         <label for="assunto">Assunto:</label>
-        <input type="text"
-            name="assunto"
-            placeholder="Ex: Furto"
-        ><br>
+        <select id="assunto-predef" name="assunto-predef" value="" onchange="onChangeSubject(this)" onselect="console.log">
+          {% for subject, count in subjects %}
+          <option value="{{ subject }}">{{ subject }} ({{ count }})</option>
+          {% endfor %}
+          <option value="Sem Assunto" selected>Outro</option>
+        </select>
+        <input type="text" id="assunto-outro" name="assunto-outro" placeholder="Ex: Furto" hidden>
+      </div>
 
+      <div class="input-with-label">
         <label for="tipo_download">Baixar como:</label>
         <select name="tipo_download">
-            <option value="xlsx" selected>Planilha XLSX</option>
-            <option value="json">JSON</option>
+          <option value="xlsx" selected>Planilha XLSX</option>
+          <option value="json">JSON</option>
         </select>
+      </div>
 
-        <input type="submit" value="Buscar">
+      <input type="submit" value="Buscar">
     </form>
+
+    {% if results %}
+    <h2>Resultado da consulta</h2>
+
+    <div class="result-table">
+      <div class="result-head">
+        <div class="result-col">
+          Número do Processo
+        </div>
+        <div class="result-col">
+          Assunto
+        </div>
+      </div>
+      <div class="result-row">
+        <div class="result-col">
+          0000000.AAAA.8.19.OOOO
+        </div>
+        <div class="result-col">
+          Furto
+        </div>
+      </div>
+      <div class="result-row">
+        <div class="result-col">
+          0000001.AAAA.8.19.OOOO
+        </div>
+        <div class="result-col">
+          Algo
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
     <h3>Intervalos conhecidos</h3>
 
     <table style="border: solid 1px black; padding: 1em">
         <tr><th>Início</th><th>Fim</th></tr>
         {% for start, end in intervals %}
-        <tr><td>{{ "%07d"|format(start) }}.AAAA.8.19.OOOO</td><td>{{ "%07d"|format(end) }}.AAAA.8.19.OOOO</td></tr>
+        <tr><td>{{ "%07d"|format(start) }}<span style="">.2021.8.19.OOOO</td><td>{{ "%07d"|format(end) }}.2021.8.19.OOOO</td></tr>
         {% endfor %}
     <table>
 </body>

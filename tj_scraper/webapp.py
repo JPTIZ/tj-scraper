@@ -1,12 +1,14 @@
 """A web application front/backend for the library's operations."""
+from dataclasses import dataclass
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Union
 
 from flask import Flask, jsonify, render_template, request, send_file
 from flask.wrappers import Response as FlaskResponse
 from werkzeug.wrappers.response import Response as WerkzeugResponse
 
-from .cache import jsonl_reader, restore
+from .cache import jsonl_reader, restore, load_most_common_subjects
 from .errors import InvalidProcessNumber
 from .process import (
     TJRJ,
@@ -15,6 +17,11 @@ from .process import (
     JudicialSegment,
     ProcessJSON,
     to_cnj_number,
+)
+from tj_scraper.download import (
+    discover_with_json_api,
+    download_all_from_range,
+    processes_by_subject,
 )
 
 Response = Union[str, tuple[str | FlaskResponse | WerkzeugResponse, int]]
@@ -57,10 +64,6 @@ def make_intervals(known_ids: list[CNJProcessNumber]) -> list[tuple[int, int]]:
     if last != end:
         intervals.append((start, last))
 
-    from pprint import pprint
-
-    pprint(intervals)
-
     return [
         (start.sequential_number, end.sequential_number) for start, end in intervals
     ]
@@ -71,11 +74,70 @@ def to_cnj_number_or_none(item: ProcessJSON) -> CNJProcessNumber | None:
     try:
         return to_cnj_number(str(item["codCnj"]))
     except (InvalidProcessNumber, KeyError):
-        # print(f"{list(item.keys())=}")
         return None
 
 
-def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
+@dataclass(frozen=True)
+class DownloadRequest:
+    number_combinations: CNJNumberCombinations
+    subject: str
+    cache_path: Path
+    download_type: str
+
+
+def get_processes(request: DownloadRequest) -> list[ProcessJSON]:
+    with NamedTemporaryFile() as sink:
+        sink_file = Path(sink.name)
+
+        if request.subject is not None:
+            processes_by_subject(
+                request.number_combinations,
+                words=[request.subject],
+                download_function=discover_with_json_api,
+                output=sink_file,
+                cache_path=request.cache_path,
+            )
+        else:
+            download_all_from_range(
+                request.number_combinations, sink_file, cache_path=request.cache_path
+            )
+
+        sink.seek(0)
+
+        with jsonl_reader(sink_file) as sink_f:
+            return list(sink_f)
+
+
+def export_file(
+    request: DownloadRequest,
+    data: list[ProcessJSON],
+) -> Response:
+    match request.download_type:
+        case "json":
+            return jsonify(data), 200
+        case "xlsx":
+            suffix = "_".join(request.subject.split())
+            params = map(str, [
+                "Processos-TJ",
+                request.number_combinations.sequence_start,
+                request.number_combinations.sequence_end,
+                suffix,
+            ])
+            filename = f'{"-".join(params)}.xlsx'
+            with NamedTemporaryFile() as xlsx_file:
+                from tj_scraper.export import export_to_xlsx
+
+                export_to_xlsx(data, Path(xlsx_file.name))
+                xlsx_file.seek(0)
+                return send_file(xlsx_file.name, attachment_filename=filename), 200
+        case _:
+            return (
+                f'tipo_download should be "json" or "xlsx", but it is {request.download_type}.',
+                300,
+            )
+
+
+def make_webapp(cache_path: Path) -> Flask:
     """Creates the tj_scraper flask application."""
     # pylint: disable=redefined-outer-name
     # pylint: disable=too-many-statements
@@ -88,9 +150,6 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
 
     @app.route("/")
     def _root() -> Response:
-        print("Hi")
-        print("Make intervals *done*")
-
         import json
 
         range_files = Path("id_ranges.json")
@@ -112,17 +171,12 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
         else:
             print("No cache file found. No intervals then...")
             intervals = []
-        return render_template("mainpage.html", intervals=intervals)
+        subjects = load_most_common_subjects(cache_path)
+        return render_template("mainpage.html", intervals=intervals, subjects=subjects)
 
     @app.route("/buscar", methods=["GET"])
     def _search() -> Response:
         # pylint: disable=too-many-locals
-        from tj_scraper.download import (
-            discover_with_json_api,
-            download_all_from_range,
-            processes_by_subject,
-        )
-
         start_arg = request.args.get("intervalo_inicio")
         end_arg = request.args.get("intervalo_fim")
 
@@ -145,61 +199,28 @@ def make_webapp(cache_path: Path = Path("cache.db")) -> Flask:
             segment=JudicialSegment.JEDFT,
             year=int(year_arg),
         )
-        subject = request.args.get("assunto")
+        subject = request.args.get("assunto-predef", "")
+        print(f"{subject=}")
 
-        from tempfile import NamedTemporaryFile
+        if subject == "Sem Assunto":
+            subject = request.args.get("assunto-outro", "")
+            print(f"Changed: {subject=}")
 
-        with NamedTemporaryFile() as sink:
-            sink_file = Path(sink.name)
+        download_request = DownloadRequest(
+            number_combinations=number_combinations,
+            subject=subject,
+            cache_path=cache_path,
+            download_type=request.args.get("tipo_download", ""),
+        )
 
-            if subject is not None:
-                print(f"Com assunto, {subject=}")
-                processes_by_subject(
-                    number_combinations,
-                    words=subject.split(),
-                    download_function=discover_with_json_api,
-                    output=sink_file,
-                    cache_path=cache_path,
-                )
-            else:
-                print(f"{subject=}")
-                download_all_from_range(
-                    number_combinations, sink_file, cache_path=cache_path
-                )
+        data = get_processes(download_request)
 
-            sink.seek(0)
-
-            with jsonl_reader(sink_file) as sink_f:
-                data = list(sink_f)
-
-        print(f"{data=}")
         if not data:
             return "Nenhum dado retornado."
 
         subject = subject if subject is not None else ""
 
-        match tipo_download := request.args.get("tipo_download"):
-            case "json":
-                return jsonify(data), 200
-            case "xlsx":
-                suffix = "_".join(subject.split())
-                filename = (
-                    "Processos-TJ"
-                    f"-{number_combinations.sequence_start}"
-                    f"-{number_combinations.sequence_end}"
-                    f"-{suffix}.xlsx"
-                )
-                with NamedTemporaryFile() as xlsx_file:
-                    from tj_scraper.export import export_to_xlsx
-
-                    export_to_xlsx(data, Path(xlsx_file.name))
-                    xlsx_file.seek(0)
-                    return send_file(xlsx_file.name, attachment_filename=filename), 200
-
-        return (
-            f'tipo_download should be "json" or "xlsx", but it is {tipo_download}.',
-            300,
-        )
+        return export_file(download_request, data)
 
     return app
 
