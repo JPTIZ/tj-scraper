@@ -2,6 +2,7 @@
 Tests cache's low-level operations. `test_download` contains high-level
 testing.
 """
+
 from pathlib import Path
 from typing import Iterable
 

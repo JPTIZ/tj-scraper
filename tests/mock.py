@@ -1,4 +1,5 @@
 """Mocked data for unit tests."""
+
 from typing import Any, Generator, Mapping
 
 import pytest

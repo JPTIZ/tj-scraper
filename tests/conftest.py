@@ -1,4 +1,5 @@
 """Pytest conftest module."""
+
 from pathlib import Path
 from typing import Any, Generator
 

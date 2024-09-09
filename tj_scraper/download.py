@@ -1,4 +1,5 @@
 """Responsible for handling data downloading."""
+
 import asyncio
 import json
 from collections.abc import Collection

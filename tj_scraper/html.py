@@ -2,6 +2,7 @@
 Tools to fetch information from full-html pages (generally through scraping
 tools).
 """
+
 import multiprocessing
 from pathlib import Path
 from typing import Any, Callable, Generator

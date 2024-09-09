@@ -1,4 +1,5 @@
 """Helper functions for tj_scraper's unit tests."""
+
 from collections.abc import Collection
 from typing import Any, Optional, TypeVar
 

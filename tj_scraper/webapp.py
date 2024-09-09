@@ -1,4 +1,5 @@
 """A web application front/backend for the library's operations."""
+
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -117,12 +118,15 @@ def export_file(
             return jsonify(data), 200
         case "xlsx":
             suffix = "_".join(request.subject.split())
-            params = map(str, [
-                "Processos-TJ",
-                request.number_combinations.sequence_start,
-                request.number_combinations.sequence_end,
-                suffix,
-            ])
+            params = map(
+                str,
+                [
+                    "Processos-TJ",
+                    request.number_combinations.sequence_start,
+                    request.number_combinations.sequence_end,
+                    suffix,
+                ],
+            )
             filename = f'{"-".join(params)}.xlsx'
             with NamedTemporaryFile() as xlsx_file:
                 from tj_scraper.export import export_to_xlsx
