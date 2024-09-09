@@ -1,4 +1,5 @@
 """A package of tools for brazilian Tribunal de Justiça pages."""
+
 from typing import Callable, cast
 
 from importlib_metadata import version

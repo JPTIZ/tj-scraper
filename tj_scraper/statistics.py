@@ -1,4 +1,5 @@
 """Module for statistic data generation."""
+
 import cProfile
 import itertools
 import time
@@ -197,6 +198,9 @@ def view_profile(path: Path) -> ProfileTimes | None:
     return ProfileTimes(total=total_time, network=network_time)
 
 
+Batch = Coroutine[BatchArgs, BatchArgs, FetchResult]
+
+
 def profile_and_dump(
     function: Callable[[ProfileParams], None],
     timer: Timer | None,
@@ -208,8 +212,6 @@ def profile_and_dump(
     parameters and dumps its result.
     """
     run_batch_async = getattr(tj_scraper.download, "run_batch")
-
-    Batch = Coroutine[BatchArgs, BatchArgs, FetchResult]
 
     async def run_batch(
         as_async: bool, batch: Iterable[Batch]
@@ -468,9 +470,11 @@ def main() -> None:
         cache_op("view")
     if op == "dump":
         combs = sum(
-            params.sequence_len * params.batch_size
-            if params.as_async
-            else params.sequence_len
+            (
+                params.sequence_len * params.batch_size
+                if params.as_async
+                else params.sequence_len
+            )
             for params in params_setup
         )
 

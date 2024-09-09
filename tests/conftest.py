@@ -1,4 +1,5 @@
 """Pytest conftest module."""
+
 from pathlib import Path
 from typing import Any, Generator
 
@@ -32,14 +33,15 @@ def cache_db(tmp_path: Path) -> Generator[Path, None, None]:
     path.unlink(missing_ok=True)
 
 
-@pytest.hookimpl(tryfirst=True, hookwrapper=True)  # type: ignore
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(
     item: Function, call: CallInfo[Any]
-) -> Generator[None, pluggy._callers._Result, None]:
+) -> Generator[None, pluggy._result.Result[None], None]:
     """
     Ensures `request.node.rep_[setup,call,teardown]` from pytest is set to the
     respective stage result.
     """
+
     _ = call
     # execute all other hooks to obtain the report object
     outcome = yield

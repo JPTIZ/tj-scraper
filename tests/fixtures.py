@@ -1,4 +1,5 @@
 """Pytest fixtures for tj_scraper's unit tests."""
+
 from pathlib import Path
 from typing import Generator, TypeVar
 

@@ -1,4 +1,5 @@
 """CLI part of the project. Interface should be in portuguese."""
+
 from enum import Enum
 from pathlib import Path
 from typing import Optional

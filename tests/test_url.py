@@ -4,6 +4,7 @@ Tests URL building utilities.
 TJ-specific URL building aren't tested since they're just hardcoded shortcuts
 to URL building.
 """
+
 from tj_scraper.url import build_url
 
 

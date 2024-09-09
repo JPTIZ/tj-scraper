@@ -1,4 +1,5 @@
 """Deals with export formats."""
+
 from collections.abc import Collection
 from pathlib import Path
 from typing import Mapping, TypeVar

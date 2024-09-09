@@ -1,4 +1,5 @@
 """Related to a TJ's juridical process."""
+
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -289,7 +290,7 @@ def advance(number: CNJProcessNumber, tj: TJ) -> Optional[CNJProcessNumber]:
         (next_number, reset_for("number")),
     ]
 
-    for (step, reset) in steps:
+    for step, reset in steps:
         new_number = step(number)
         if new_number is not None:
             return new_number

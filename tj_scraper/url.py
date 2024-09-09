@@ -1,4 +1,5 @@
 """General tools for URL building."""
+
 from typing import Mapping
 
 

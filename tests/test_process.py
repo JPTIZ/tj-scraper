@@ -1,4 +1,5 @@
 """Tests process object manipulation through tj_scraper.process module."""
+
 import pytest
 
 from tj_scraper.process import (

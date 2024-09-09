@@ -1,4 +1,5 @@
 """Tests download functions."""
+
 # pylint: disable=redefined-outer-name
 # pylint: disable=unused-argument
 # pyright: reportUnusedImport=false

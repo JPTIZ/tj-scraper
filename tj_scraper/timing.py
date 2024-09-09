@@ -1,4 +1,5 @@
 """Time measurement utilities."""
+
 from dataclasses import dataclass
 from time import time
 from typing import Callable, Generic, ParamSpec, TypeVar

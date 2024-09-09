@@ -1,4 +1,5 @@
 """Mocked data for unit tests."""
+
 from typing import Any, Generator, Mapping
 
 import pytest
@@ -112,7 +113,7 @@ def local_tj() -> Generator[aioresponses, None, None]:
         )
         return CallbackResult(status=200, payload=payload)  # type: ignore
 
-    with aioresponses() as mocked_aiohttp:  # type: ignore
+    with aioresponses() as mocked_aiohttp:
         mocked_aiohttp.post(
             TJ_INFO.tjs["rj"].cnj_endpoint, callback=tjrj_cnj_callback, repeat=True
         )

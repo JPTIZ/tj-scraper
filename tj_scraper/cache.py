@@ -1,4 +1,5 @@
 """Deals with cache-related features."""
+
 import json
 import sqlite3
 from dataclasses import dataclass
@@ -270,14 +271,17 @@ def load_most_common_subjects(cache_path: Path, n: int = 10) -> list[tuple[str, 
     with sqlite3.connect(cache_path) as connection:
         cursor = connection.cursor()
 
-        return list(cursor.execute(
-            "select subject, count(*) as c"
-            " from Processos"
-            " where subject <> ''"
-            " group by subject"
-            " order by c desc"
-            " limit ?"
-        , (n,)))
+        return list(
+            cursor.execute(
+                "select subject, count(*) as c"
+                " from Processos"
+                " where subject <> ''"
+                " group by subject"
+                " order by c desc"
+                " limit ?",
+                (n,),
+            )
+        )
     return []
 
 

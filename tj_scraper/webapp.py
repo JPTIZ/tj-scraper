@@ -1,4 +1,5 @@
 """A web application front/backend for the library's operations."""
+
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -8,7 +9,13 @@ from flask import Flask, jsonify, render_template, request, send_file
 from flask.wrappers import Response as FlaskResponse
 from werkzeug.wrappers.response import Response as WerkzeugResponse
 
-from .cache import jsonl_reader, restore, load_most_common_subjects
+from tj_scraper.download import (
+    discover_with_json_api,
+    download_all_from_range,
+    processes_by_subject,
+)
+
+from .cache import jsonl_reader, load_most_common_subjects, restore
 from .errors import InvalidProcessNumber
 from .process import (
     TJRJ,
@@ -17,11 +24,6 @@ from .process import (
     JudicialSegment,
     ProcessJSON,
     to_cnj_number,
-)
-from tj_scraper.download import (
-    discover_with_json_api,
-    download_all_from_range,
-    processes_by_subject,
 )
 
 Response = Union[str, tuple[str | FlaskResponse | WerkzeugResponse, int]]
@@ -117,19 +119,22 @@ def export_file(
             return jsonify(data), 200
         case "xlsx":
             suffix = "_".join(request.subject.split())
-            params = map(str, [
-                "Processos-TJ",
-                request.number_combinations.sequence_start,
-                request.number_combinations.sequence_end,
-                suffix,
-            ])
+            params = map(
+                str,
+                [
+                    "Processos-TJ",
+                    request.number_combinations.sequence_start,
+                    request.number_combinations.sequence_end,
+                    suffix,
+                ],
+            )
             filename = f'{"-".join(params)}.xlsx'
             with NamedTemporaryFile() as xlsx_file:
                 from tj_scraper.export import export_to_xlsx
 
                 export_to_xlsx(data, Path(xlsx_file.name))
                 xlsx_file.seek(0)
-                return send_file(xlsx_file.name, attachment_filename=filename), 200
+                return send_file(xlsx_file.name, download_name=filename), 200
         case _:
             return (
                 f'tipo_download should be "json" or "xlsx", but it is {request.download_type}.',
