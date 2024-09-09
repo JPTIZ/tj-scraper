@@ -129,7 +129,7 @@ def export_file(
 
                 export_to_xlsx(data, Path(xlsx_file.name))
                 xlsx_file.seek(0)
-                return send_file(xlsx_file.name, attachment_filename=filename), 200
+                return send_file(xlsx_file.name, download_name=filename), 200
         case _:
             return (
                 f'tipo_download should be "json" or "xlsx", but it is {request.download_type}.',
