@@ -9,7 +9,13 @@ from flask import Flask, jsonify, render_template, request, send_file
 from flask.wrappers import Response as FlaskResponse
 from werkzeug.wrappers.response import Response as WerkzeugResponse
 
-from .cache import jsonl_reader, restore, load_most_common_subjects
+from tj_scraper.download import (
+    discover_with_json_api,
+    download_all_from_range,
+    processes_by_subject,
+)
+
+from .cache import jsonl_reader, load_most_common_subjects, restore
 from .errors import InvalidProcessNumber
 from .process import (
     TJRJ,
@@ -18,11 +24,6 @@ from .process import (
     JudicialSegment,
     ProcessJSON,
     to_cnj_number,
-)
-from tj_scraper.download import (
-    discover_with_json_api,
-    download_all_from_range,
-    processes_by_subject,
 )
 
 Response = Union[str, tuple[str | FlaskResponse | WerkzeugResponse, int]]
